@@ -83,12 +83,13 @@ fn pay_out_nomoney() {
     let arrrgh = result.promise_errors().first().unwrap().as_ref().unwrap().unwrap_json::<String>();
 }
     
-// pay_out should fail if any of the users don't exist.
+// IMHO pay_out() should fail if any of the users don't exist.
 // AND, none of the money should have moved when the dust clears!
-//
-// /// alas: https://stackoverflow.com/questions/70819819/how-can-i-verify-if-a-near-address-is-valid-in-smart-contract/70820257#70820257
+// alas, we can't test that.
+// https://stackoverflow.com/questions/70819819/how-can-i-verify-if-a-near-address-is-valid-in-smart-contract/70820257#70820257
 
-// this should succeed:
+
+// this one should succeed:
 #[test]
 fn payout_1() {
     let (root, contract, alice) = init();
@@ -120,7 +121,7 @@ fn payout_1() {
     assert_eq!(carol.account().unwrap().amount, (to_yocto("10") + retval));
     assert_eq!(dick.account().unwrap().amount, (to_yocto("10") + retval));
 
-    // have a look at how much was returned?
+    // TODO: have a look at how much was returned?
 }
 
 
