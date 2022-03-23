@@ -8,5 +8,11 @@ release: target/wasm32-unknown-unknown/release/distrotron.wasm
 
 debug: target/wasm32-unknown-unknown/debug/distrotron.wasm
 
-test: release $(wildcard tests/sim/*.rs)
+simtest: release $(wildcard tests/sim/*.rs)
+	cargo test first_tests -- --nocapture
+
+unittest: release debug 
+	cd distrotron; make test
+
+test: simtest unittest
 	cargo test -- --nocapture

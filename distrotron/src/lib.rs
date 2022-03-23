@@ -6,7 +6,7 @@
 //!
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{env, near_bindgen, AccountId, Balance, Promise};
+use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
 
@@ -23,8 +23,23 @@ pub struct Distrotron {
 // money in yocto:
 pub type AmtYocto = u128; 
 pub type AmtYoctoU128 = U128; 
-pub type AccountIdSet = Vec<AccountId>;
 
+const LOTSAGAS: u64 = 5_000_000_000_000;
+
+// the list_minter API on a Mintbase contract:
+#[ext_contract(ext_mc)]
+trait MinterContract {
+    fn list_minters(&self) -> Vec<AccountId>;
+}
+
+#[ext_contract(ext_self)]
+trait MyContract {
+    fn list_minters_cb(&self) -> Promise;
+    fn pay_out(&self, payees: Vec<AccountId>) -> Promise;
+}
+
+
+// our contract:
 #[near_bindgen]
 impl Distrotron {
     /// Returns the amount of NEAR that was paid to each recipient, in Yocto
@@ -144,54 +159,53 @@ impl Distrotron {
         // TODO: a handful of rounding and mis-estimates of gas might want to get refunded here,
         // or else this contract will slowly build up some savings.
         
-        // Return the payout amount.
+        // Return the count of how much each payee received:
         amount
     }
+
+    // Given a contract ID, get the list of minters from that contract's list_minters() method,
+    // then distribute the attached funds to that list of minters via pay_out().
+    pub fn pay_minters(&self, minter_contract: AccountId) -> Promise {
+        assert!( env::is_valid_account_id(minter_contract.as_bytes()), "Invalid contract ID" ) ;
+        ext_mc::list_minters(&minter_contract, 0, LOTSAGAS)
+            .then(ext_self::list_minters_cb(&env::current_account_id(), 0, LOTSAGAS) )
+    }
+
+    pub fn list_minters_cb(&self) -> Promise {
+        // pattern from https://docs.near.org/docs/tutorials/contracts/xcc-rust-cheatsheet :
+        assert_eq!(env::promise_results_count(), 1, "This is a callback method");
+
+        match env::promise_result(0) {
+            PromiseResult::NotReady => unreachable!(),
+            PromiseResult::Failed => env::panic(b"minter contract failure"),
+            PromiseResult::Successful(val) => {
+                let account_ids = near_sdk::serde_json::from_slice::<Vec<AccountId>>(&val).unwrap();
+                // test for length:
+                assert!( account_ids.len() > 0, "no minters found");
+                // return promise:
+                ext_self::pay_out(account_ids, 
+                   &env::current_account_id(),  
+                     env::attached_deposit(),                // all attached funds
+                     env::prepaid_gas() - env::used_gas() // all remaining gas
+                )
+            }
+        }
+    }
+
 
 
     pub fn be_good(&self) -> bool {
         true
     }
-
-
-    // /// Return the recipient list 
-    // /// (with paging option?)
-    // pub fn get_recipients() -> accountIds[] {
-    //     // TODO
-    // }
-    // /// Sets the recipient list to a list of near accounts.
-    // /// Can only be called by admins!
-    // /// Takes an array/list of accountIDs
-    // /// Returns the list, if all went well.
-    // pub fn set_recipients(accountIds recipients[] ) -> accountIds[] {
-    //     // TODO
-    // }
-    // /// Adds a recipient to the current list.
-    // /// Can only be called by admins!
-    // /// If account was already on the list, no-op.
-    // /// Returns the current list if all went well.
-    // pub fn add_recipient(accountId recipient) -> accountIds[] {
-    //     // TODO
-    // }
-    // /// Remove a recipient from the current list.
-    // /// Can only be called by admins!
-    // /// If account was not on the list, throw an error?  or no-op?
-    // /// Returns the current list if all went well.
-    // pub fn remove_recipient(accountId recipient) -> accountIds[] {
-    //     // TODO
-    // }
     
 }
-/*
- * the rest of this file sets up unit tests
- * to run these, the command will be:
- * cargo test --package rust-counter-tutorial -- --nocapture
- * Note: 'rust-counter-tutorial' comes from cargo.toml's 'name' key
- */
+
+
+
 
 // use the attribute below for unit tests
 #[cfg(test)]
-mod tests {
+mod unit_tests {
     use super::*;
     use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
@@ -240,13 +254,13 @@ mod tests {
         "eve.testnet".to_string()
     }
 
-    fn frank() -> AccountId {
-        "frank.testnet".to_string()
-    }
-
-    fn grace() -> AccountId {
-        "grace.testnet".to_string()
-    }
+    // fn frank() -> AccountId {
+    //     "frank.testnet".to_string()
+    // }
+    //
+    // fn grace() -> AccountId {
+    //     "grace.testnet".to_string()
+    // }
 
 
     #[test]
@@ -255,13 +269,13 @@ mod tests {
         expected = r#"Empty recipient list"#
     )]
     fn pay_out_1() { 
-        let c = get_context(vec![], false);
+        let mut c = get_context(vec![], false);
         c.attached_deposit = to_ynear(10);
         testing_env!(c);
         let mut contract = Distrotron {};
 
         let chumps = vec![];
-        let cut = contract.pay_out(chumps);
+        let _cut = contract.pay_out(chumps);
     }
 
 
@@ -274,26 +288,70 @@ mod tests {
         let c = get_context(vec![], false);
         testing_env!(c);
         let mut contract = Distrotron {};
-
-    }
-
-    #[test]
-    // pay_out should succeed with multiple recipients
-    fn pay_out_4() { 
-        let c = get_context(vec![], false);
-        c.attached_deposit = to_ynear(10);
-        testing_env!(c);
-        let mut contract = Distrotron {};
-
         let chumps = vec![bob(), carol(), dick(), eve()];
-
-        // how much money does bob have before the call?  probably not much?
-        let before = chumps[0].account().unwrap().amount;
-        let cut = contract.pay_out(chumps);
-        let after = chumps[0].account().unwrap().amount;
-        assert_eq!(after - before, cut, "bob was ripped off!");
+        let _cut = contract.pay_out(chumps);
     }
+
+    //#[test]
+    // // pay_out should succeed with multiple recipients
+    // fn pay_out_4() { 
+    //     let c = get_context(vec![], false);
+    //     c.attached_deposit = to_ynear(10);
+    //     testing_env!(c);
+    //     let mut contract = Distrotron {};
+    //
+    //     let chumps = vec![bob(), carol(), dick(), eve()];
+    //
+    //     // how much money does bob have before the call?  probably not much?
+    //     let before = chumps[0].account().unwrap().amount;
+    //     let cut = contract.pay_out(chumps);
+    //     let after = chumps[0].account().unwrap().amount;
+    //     assert_eq!(after - before, cut, "bob was ripped off!");
+    // }
 
     // more functional tests are performed in the Simulator & Sandbox.
+
+    // pay_minters() should fail if argument is invalid
+    #[test]
+    #[should_panic(
+        expected = r#"Invalid contract ID"#
+    )]
+    fn pay_minters_1() {
+        let mut c = get_context(vec![], false);
+        c.attached_deposit = to_ynear(10);
+        testing_env!(c);
+        let contract = Distrotron {};
+        contract.pay_minters("i".to_string()); // invalid; minimum length is 2
+    }
+    // // should fail if list_minters fails on the target contact
+    // #[test]
+    // #[should_panic(
+    //     expected = r#"minter contract failure"#
+    // )]
+    // fn pay_minters_2() {
+    //     let c = get_context(vec![], false);
+    //     c.attached_deposit = to_ynear(10);
+    //     testing_env!(c);
+    //     let mut contract = Distrotron {};
+    // }
+    // // should fail if list_minters returns no minters
+    // #[test]
+    // #[should_panic(
+    //     expected = r#"no minters found"#
+    // )]
+    // fn pay_minters_3() {
+    //     let c = get_context(vec![], false);
+    //     c.attached_deposit = to_ynear(10);
+    //     testing_env!(c);
+    //     let mut contract = Distrotron {};
+    // }
+    // // should punt to pay_out otherwise.
+    // #[test]
+    // fn pay_minters_4() {
+    //     let c = get_context(vec![], false);
+    //     c.attached_deposit = to_ynear(10);
+    //     testing_env!(c);
+    //     let mut contract = Distrotron {};
+    // }
 
 }
