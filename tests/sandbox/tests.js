@@ -3,25 +3,56 @@ const BN = require("bn.js");
 const fs = require("fs").promises;
 const assert = require("assert").strict;
 const path = require("path");
+const { utils } = nearAPI;
+
 
 function getConfig(env) {
   switch (env) {
+    case "testnet":
+      return {
+        networkId: "testnet",
+        nodeUrl: "http://23.23.23.101:3030",
+        masterAccount: "mykletest.testnet",
+        contractAccount: "distro_test",
+				stubAccount: "stub",
+				keyPath: "/Volumes/External/mykle/.near-credentials/testnet/mykletest.testnet.json",
+      };
     case "sandbox":
+      return {
+        networkId: "sandbox",
+        nodeUrl: "http://23.23.23.101:3030",
+        masterAccount: "test.near",
+        contractAccount: "distro",
+				stubAccount: "stub",
+				keyPath: "/Volumes/External/mykle/tmp/near-sandbox/validator_key.json",
+      };
     case "local":
       return {
         networkId: "sandbox",
         nodeUrl: "http://localhost:3030",
         masterAccount: "test.near",
-        contractAccount: "distro.test.near",
+        contractAccount: "distro",
+        stubAccount: "stub",
         keyPath: "/tmp/near-sandbox/validator_key.json",
       };
   }
 }
 
-const contractMethods = {
-  // viewMethods: ["get_status"],
-  changeMethods: ["pay_minters", "pay_out"],
-};
+function n2y(near) {
+	return utils.format.parseNearAmount(near.toString());
+}
+function y2n(yocto) { 
+	return utils.format.formatNearAmount(yocto);
+}
+
+function fullAccountName(prefix){
+	return prefix + '.' + config.masterAccount;
+}
+
+// const contractMethods = {
+//   changeMethods: ["pay_minters", "pay_out"],
+// };
+
 let config;
 let masterAccount;
 let masterKey;
@@ -49,83 +80,105 @@ async function initNear() {
   console.log("Finish init NEAR");
 }
 
-async function createUser(
-  accountPrefix,
-  contractAccountId,
-  contractMethods
+async function createTestUser(
+  accountPrefix, initBalance = 100
 ) {
-  let accountId = accountPrefix + "." + config.masterAccount;
+	//let accountId = accountPrefix + "." + config.masterAccount;
+  let accountId = fullAccountName(accountPrefix);
+  keyStore.setKey(config.networkId, accountId, masterKey);
+  const account = new nearAPI.Account(near.connection, accountId);
+
+	// delete it first, 
+	try { 
+		await account.deleteAccount(config.masterAccount);
+	} catch {
+		// fails if it didn't exist
+	}
+
+	// then recreate it.
   await masterAccount.createAccount(
     accountId,
     pubKey,
-    new BN(10).pow(new BN(25))
+		n2y(initBalance)
   );
-  keyStore.setKey(config.networkId, accountId, masterKey);
-  const account = new nearAPI.Account(near.connection, accountId);
-  // const accountUseContract = new nearAPI.Contract(
-  //   account,
-  //   contractAccountId,
-  //   contractMethods
-  // );
-  // return accountUseContract;
+	console.log("created " + accountId);
 	return account;
 }
 
-async function initTest() {
-  const contract = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/distrotron.wasm"));
-  const _contractAccount = await masterAccount.createAndDeployContract(
-    config.contractAccount,
-    pubKey,
-    contract,
-    new BN(10).pow(new BN(25))
-  );
+async function initContracts() {
+  const contractwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/distrotron.wasm"));
+	const _contractAccount = await createTestUser(config.contractAccount, 10000);
+	await _contractAccount.deployContract(contractwasm);
 
-  const alice = await createUser(
-    "alice",
-    config.contractAccount,
-    contractMethods
-  );
+	const stubwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/stub.wasm"));
+	const _stubAccount = await createTestUser(config.stubAccount);
+	await _stubAccount.deployContract(stubwasm);
 
-  const bob = await createUser(
-    "bob",
-    config.contractAccount,
-    contractMethods
-  );
-
-	//console.log("Finish deploy contracts and create test accounts");
-  console.log("contract deployed, test accounts created");
-  return { alice, bob };
+  console.log("contracts deployed, test accounts created");
+	return _contractAccount;
 }
 
-async function test() {
+async function totalBalance(acct){
+	b = await acct.getAccountBalance();
+	return b.total;
+}
+
+async function test_pay_out() {
   // 1. Creates testing accounts and deploys a contract
   await initNear();
-  const { alice, bob } = await initTest();
+	await initContracts();
 
-  // // 2. Performs a `set_status` transaction signed by Alice and then calls `get_status` to confirm `set_status` worked
-  // await alice.set_status({ args: { message: "hello" } });
-  // let alice_message = await alice.get_status({
-  //   account_id: "alice.test.near",
-  // });
-  // assert.equal(alice_message, "hello");
-  //
-  // // 3. Gets Bob's status and which should be `null` as Bob has not yet set status
-  // let bob_message = await bob.get_status({
-  //   account_id: "bob.test.near",
-  // });
-  // assert.equal(bob_message, null);
-  //
-  // // 4. Performs a `set_status` transaction signed by Bob and then calls `get_status` to show Bob's changed status and should not affect Alice's status
-  // await bob.set_status({ args: { message: "world" } });
-  // bob_message = await bob.get_status({
-  //   account_id: "bob.test.near",
-  // });
-  // assert.equal(bob_message, "world");
-  // alice_message = await alice.get_status({
-  //   account_id: "alice.test.near",
-  // });
-  // assert.equal(alice_message, "hello"); 
-	assert.equal(1,2); // fail!
+  const alice = await createTestUser(
+    "alice",
+  );
+
+  const bob = await createTestUser(
+    "bob",
+  );
+
+	const carol = await createTestUser("carol");
+
+	let balances = {
+		before: {
+			"alice": y2n(await totalBalance(alice)),
+			"bob": y2n(await totalBalance(bob)),
+			"carol": y2n(await totalBalance(carol)),
+		}
+	};
+
+	const distro = new nearAPI.Contract(
+		carol, // will call it
+		fullAccountName(config.contractAccount), // name (string) of acct where contract is deployed
+		{changeMethods: ["pay_out"]}
+	);
+
+	// 2. have carol send some money to distrotron
+	
+	net_payment = await distro.pay_out( { 
+		args: {
+			payees: [alice.accountId, bob.accountId]
+	}, 
+		gas: "300000000000000", // attached GAS (optional)
+		amount: n2y(10),					// attached near
+	});
+
+	// 3. check that it was distributed to alice and bob
+	
+	balances.after = {
+			"alice": y2n(await totalBalance(alice)),
+			"bob": y2n(await totalBalance(bob)),
+			"carol": y2n(await totalBalance(carol)),
+	};
+
+	console.log("Net payment: " + y2n(net_payment) + " NEAR");
+	console.log(balances);
 }  
+
+async function test(){
+	const started = new Date();
+	await test_pay_out();
+	const finished = new Date();
+	console.log(`execution time: ${(finished - started)/1000} seconds`);
+}
 
 test();
