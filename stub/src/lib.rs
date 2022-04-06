@@ -40,9 +40,10 @@ pub struct Stub {
 // our contract:
 #[near_bindgen]
 impl Stub {
-    pub fn list_minters(&mut self) -> Vec<AccountId> {
+
+    pub fn list_minters(&self) -> Vec<AccountId> {
         // return vector of account ids
-        vec!["alice.testnet".to_string(), "bob.testnet".to_string()]
+        vec!["alice.test.near".to_string(), "bob.test.near".to_string()]
     }
 
     pub fn be_good(&self) -> bool {

@@ -56,10 +56,6 @@ function fullAccountName(prefix){
 	return prefix + '.' + config.masterAccount;
 }
 
-// const contractMethods = {
-//   changeMethods: ["pay_minters", "pay_out"],
-// };
-
 let config;
 let masterAccount;
 let masterKey;
@@ -198,6 +194,71 @@ async function test_pay_out() {
 
 }  
 
+async function test_pay_minters() {
+	let users = await loadTestUsers();
+
+	let balances = {
+		before: {
+			"alice": await totalBalance(users.alice),
+			"bob": await totalBalance(users.bob),
+			"carol": await totalBalance(users.carol),
+		}
+	};
+
+	const distro = new nearAPI.Contract(
+		users.carol, // will call it
+		fullAccountName(config.contractAccount), // name (string) of acct where contract is deployed
+		{changeMethods: ["pay_minters"]}
+	);
+
+	// 2. have carol send some money to distrotron
+	
+	net_payment = BigInt( await distro.pay_minters( { 
+		args: {
+			minter_contract: fullAccountName(config.stubAccount)
+	}, 
+		gas: "300000000000000", // attached GAS (optional)
+		amount: n2y(10),				// attached near
+	}));
+
+	// 3. check that it was distributed to alice and bob
+	
+	balances.after = {
+			"alice": await totalBalance(users.alice),
+			"bob": await totalBalance(users.bob),
+			"carol": await totalBalance(users.carol),
+	};
+
+	console.log("Net payment: " + net_payment + " = " + y2n(net_payment) + " NEAR");
+	console.log(balances);
+	assert(balances.before.alice + net_payment == balances.after.alice, "alice bad balance");
+	assert(balances.before.bob + net_payment == balances.after.bob, "bob bad balance");
+
+	// 4. What did Carol pay for gas?
+	console.log("gas cost: " + y2n( balances.before.carol - (balances.after.carol + (BigInt(2) * net_payment)) ) + " NEAR");
+}  
+
+
+async function test_stub(){
+	let users = await loadTestUsers();
+	const stub = new nearAPI.Contract(
+		users.carol, // will call it
+		fullAccountName(config.stubAccount), // name (string) of acct where contract is deployed
+		{changeMethods: [], 
+			viewMethods: ["list_minters","be_good"]}
+	);
+
+	// check the stub contract is loaded
+	good = await stub.be_good();
+	console.log(good);
+
+	// // call the list_minters method on the stub contract,
+	minters = await stub.list_minters();
+
+	// confirm the results.
+	assert(minters[0] === "alice.testnet");
+	assert(minters[1] === "bob.testnet");
+}
 
 async function main(){
 
@@ -218,6 +279,12 @@ async function main(){
 			break;
 		case 'pay_out':
 			await test_pay_out();
+			break;
+		case 'pay_minters':
+			await test_pay_minters();
+			break;
+		case 'stub':
+			await test_stub();
 			break;
 		case 'compliment':
 			console.log(myArgs[1], 'is really cool.');

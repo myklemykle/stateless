@@ -24,7 +24,8 @@ pub struct Distrotron {
 pub type AmtYocto = u128; 
 pub type AmtYoctoU128 = U128; 
 
-const LOTSAGAS: u64 = 5_000_000_000_000;
+const LOTSAGAS: u64 = 50_000_000_000_000;
+const SOMEGAS: u64 = 10_000_000_000_000;
 
 // the list_minter API on a Mintbase contract:
 #[ext_contract(ext_mc)]
@@ -122,28 +123,25 @@ impl Distrotron {
         // subtract the gas costs from the yocto:
         let net_payment = ( (total_payment - est_fee_other) - (count * est_fee_per_payee) ) - est_fee_end ;
         
-        // divide the remaining yocto by the number to get the individual payouts,
-        // ignore the remainder; it'll just get returned at the end.
-
+        // divide the remaining yocto by the number of payees to get the individual payouts
         let net_slice = net_payment / count; 
 
-        // pay each of the recipients in a loop.
-        // -- we might find out a recipient does not exist!  even if they existed once before,
-        // accounts can be deleted.  If that happens, we should abort with an explanation,
-        // and make the stateless gods fix things.
+        // return the rest to the caller, to cover the gas cost
+        let refund = total_payment - (net_slice * count);
 
+        // pay each payee in a loop
         let promises: Vec<Promise> = payees.into_iter().map(|p| {
             Promise::new(p.to_string()).transfer(net_slice)
         } ).collect();
         
-        // boil all those promises down into a super-promise:
-
-        //let mut big_p = promises.iter().reduce(|a, b| &a.clone().and(b.clone()) ).unwrap();
-        
+        // boil all those promises down into a super-promise
         let mut big_p = promises[0].clone();
         for pi in 1..promises.len() {
             big_p = big_p.and(promises[pi].clone());
         }
+
+        // don't forget your change!
+        let nickelback = Promise::new(env::signer_account_id()).transfer(refund);
 
         let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
                                                                         json!({
@@ -152,26 +150,39 @@ impl Distrotron {
                                                                         0, // no payment 
                                                                         est_gas_end.try_into().unwrap()
                                                                         );
-        big_p.then(finish)
+        big_p.then(nickelback).then(finish)
     }
 
     pub fn report_payment(&self, amount: U128) -> AmtYoctoU128 { 
-        // TODO: a handful of rounding and mis-estimates of gas might want to get refunded here,
-        // or else this contract will slowly build up some savings.
-        
         // Return the count of how much each payee received:
         amount
     }
 
     // Given a contract ID, get the list of minters from that contract's list_minters() method,
     // then distribute the attached funds to that list of minters via pay_out().
-    pub fn pay_minters(&self, minter_contract: AccountId) -> Promise {
+    #[payable]
+    pub fn pay_minters(&mut self, minter_contract: AccountId) -> Promise {
         assert!( env::is_valid_account_id(minter_contract.as_bytes()), "Invalid contract ID" ) ;
         ext_mc::list_minters(&minter_contract, 0, LOTSAGAS)
-            .then(ext_self::list_minters_cb(&env::current_account_id(), 0, LOTSAGAS) )
+            .then(ext_self::list_minters_cb(&env::current_account_id(), 
+                    env::attached_deposit(), 
+
+                    // TODO: figure out how to send "the rest of my gas" to the callback.
+                    // 
+                    // The line below seems like it would work, but causes a gas-exceeded error: 
+                    // env::prepaid_gas() - env::used_gas() // all remaining gas
+                    
+                    // same with this one:
+                    // env::prepaid_gas() - (env::used_gas() + SOMEGAS) // all remaining gas
+
+                    LOTSAGAS
+                  ))
     }
 
-    pub fn list_minters_cb(&self) -> Promise {
+    #[payable]
+    pub fn list_minters_cb(&mut self) -> Promise {
+    // pub fn list_minters_cb(&mut self) -> Vec<AccountId> {
+    //pub fn list_minters_cb(&self) -> AmtYoctoU128 {
         // pattern from https://docs.near.org/docs/tutorials/contracts/xcc-rust-cheatsheet :
         assert_eq!(env::promise_results_count(), 1, "This is a callback method");
 
@@ -180,14 +191,17 @@ impl Distrotron {
             PromiseResult::Failed => env::panic(b"minter contract failure"),
             PromiseResult::Successful(val) => {
                 let account_ids = near_sdk::serde_json::from_slice::<Vec<AccountId>>(&val).unwrap();
-                // test for length:
+
+               // test for length:
                 assert!( account_ids.len() > 0, "no minters found");
-                // return promise:
                 ext_self::pay_out(account_ids, 
                    &env::current_account_id(),  
                      env::attached_deposit(),                // all attached funds
-                     env::prepaid_gas() - env::used_gas() // all remaining gas
+                     //env::prepaid_gas() - env::used_gas() // all remaining gas
+                     SOMEGAS
                 )
+                // let out:U128 = 666.into();
+                // out
             }
         }
     }
