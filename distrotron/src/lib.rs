@@ -20,14 +20,13 @@ pub struct Distrotron {
     // TODO: array of account ids, or blank?
 }
 
-// money in yocto:
-pub type AmtYocto = u128; 
-pub type AmtYoctoU128 = U128; 
+// near_sdk::Balance is u128, so:
+pub type JsonBalance = U128; 
 
-const LOTSAGAS: u64 = 50_000_000_000_000;
 const SOMEGAS: u64 = 10_000_000_000_000;
+const LIST_MINTERS_GAS: u64 = SOMEGAS;
 
-// the list_minter API on a Mintbase contract:
+// the list_minter API method on a Mintbase contract:
 #[ext_contract(ext_mc)]
 trait MinterContract {
     fn list_minters(&self) -> Vec<AccountId>;
@@ -59,7 +58,7 @@ impl Distrotron {
         assert!(count > 0, "Empty recipient list");
 
         // count the money:
-        let total_payment: AmtYocto = env::attached_deposit();
+        let total_payment: Balance = env::attached_deposit();
         // Fail if none.
         assert!(total_payment > 0, "No payment attached");
 
@@ -100,7 +99,7 @@ impl Distrotron {
         //   calculate that
         let est_gas_per_payee:u128 = 45000000000; // 0.45 Tgas (4.5^11)
         // convert to yocto
-        let est_fee_per_payee:u128 = est_gas_per_payee * ypg;
+        let est_fee_per_payee:Balance = est_gas_per_payee * ypg;
         
         //   We can also do testing to get a pretty good idea of the gas cost of pay_out,
         //   and see how it expands / contracts with the distro list.
@@ -108,13 +107,13 @@ impl Distrotron {
         //   and estimate something that way.
         let est_gas_other:u128 = 100000000000; // 0.1 Tgas, for now.
         // convert to near
-        let est_fee_other:u128 = est_gas_other * ypg;
+        let est_fee_other:Balance = est_gas_other * ypg;
 
         // and we also have to account for the final function call:
         //let est_gas_end:u128 = 100000000000; // 0.1 Tgas, for now.
         // Nope, turns out to be more ...
         let est_gas_end:u128 = 1000000000000; // 0.1 Tgas, for now.
-        let est_fee_end:u128 = est_gas_end * ypg;
+        let est_fee_end:Balance = est_gas_end * ypg;
 
         //   Question is, can that gas cost change during the running of this method?  I think not
         //   if it's not a cross-contract call.  I think it's all in the current block at the
@@ -145,6 +144,7 @@ impl Distrotron {
 
         let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
                                                                         json!({
+                                                                            //"amount": JsonBalance(net_slice)  // nope.
                                                                             "amount": U128(net_slice)
                                                                         }).to_string().into_bytes(),
                                                                         0, // no payment 
@@ -153,7 +153,7 @@ impl Distrotron {
         big_p.then(nickelback).then(finish)
     }
 
-    pub fn report_payment(&self, amount: U128) -> AmtYoctoU128 { 
+    pub fn report_payment(&self, amount: JsonBalance) -> JsonBalance { 
         // Return the count of how much each payee received:
         amount
     }
@@ -163,26 +163,28 @@ impl Distrotron {
     #[payable]
     pub fn pay_minters(&mut self, minter_contract: AccountId) -> Promise {
         assert!( env::is_valid_account_id(minter_contract.as_bytes()), "Invalid contract ID" ) ;
-        ext_mc::list_minters(&minter_contract, 0, LOTSAGAS)
+        ext_mc::list_minters(&minter_contract, 0, LIST_MINTERS_GAS)
             .then(ext_self::list_minters_cb(&env::current_account_id(), 
                     env::attached_deposit(), 
-
-                    // TODO: figure out how to send "the rest of my gas" to the callback.
-                    // 
-                    // The line below seems like it would work, but causes a gas-exceeded error: 
-                    // env::prepaid_gas() - env::used_gas() // all remaining gas
-                    
-                    // same with this one:
-                    // env::prepaid_gas() - (env::used_gas() + SOMEGAS) // all remaining gas
-
-                    LOTSAGAS
+                    ////////////////////////////////
+                    // complicated gas accounting:
+                    // send along all the gas we got, 
+                    env::prepaid_gas()  
+                    // except for:
+                    - (
+                    // what we've used so far,
+                    env::used_gas() 
+                    // plus what we just attached to the other promise above,
+                     + LIST_MINTERS_GAS
+                    // plus a wee bit more, just so this last command itself can excecute
+                     + SOMEGAS 
+                    ) 
+                    ////////////////////////////////
                   ))
     }
 
     #[payable]
     pub fn list_minters_cb(&mut self) -> Promise {
-    // pub fn list_minters_cb(&mut self) -> Vec<AccountId> {
-    //pub fn list_minters_cb(&self) -> AmtYoctoU128 {
         // pattern from https://docs.near.org/docs/tutorials/contracts/xcc-rust-cheatsheet :
         assert_eq!(env::promise_results_count(), 1, "This is a callback method");
 
@@ -197,11 +199,8 @@ impl Distrotron {
                 ext_self::pay_out(account_ids, 
                    &env::current_account_id(),  
                      env::attached_deposit(),                // all attached funds
-                     //env::prepaid_gas() - env::used_gas() // all remaining gas
-                     SOMEGAS
+                     env::prepaid_gas() - (env::used_gas() + SOMEGAS)  // (almost) all remaining gas
                 )
-                // let out:U128 = 666.into();
-                // out
             }
         }
     }
