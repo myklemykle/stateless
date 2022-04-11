@@ -1,3 +1,13 @@
+# # handle synthetic targets with little empty files in .make_targets
+# mkfile_home := $(dir $(abspath $(lastword $(MAKEFILE_LIST))))
+# .TARGETS: 
+# 	mkdir $(mkfile_home)/.TARGETS
+#
+# .TARGETS/foo: .TARGETS
+# 	touch .TARGETS/foo
+#
+# foo: .TARGETS/foo
+
 target/wasm32-unknown-unknown/release/distrotron.wasm: $(wildcard distrotron/src/*.rs) Cargo.toml distrotron/Cargo.toml
 	cargo build --target wasm32-unknown-unknown --release -p distrotron
 
@@ -33,6 +43,7 @@ sandbox_start:
 
 # find/get sandbox master key
 # ~/tmp/near-sandbox: $TARGETS/sandbox_started
+
 # scp osboxes@nearnode:tmp/near-sandbox/validator_key.json ~/tmp/near-sandbox
 
 # deploy stub contract & user
@@ -47,7 +58,7 @@ sandbox_deploy_distro: release
 sandbox_make_users:
 	node tests/sandbox/tests.js make_test_users
 
-sandbox_test: sandbox_deploy_stub sandbox_deploy_distro
+sandboxtest: sandbox_deploy_stub sandbox_deploy_distro sandbox_make_users
 	node tests/sandbox/tests.js
 
 

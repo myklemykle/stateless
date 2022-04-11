@@ -48,7 +48,15 @@ impl Distrotron {
     ///
     #[payable]
     pub fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
+        self.__pay_out(payees)
+    }
 
+    #[payable]
+    pub fn pay_out_net(&mut self, payees: Vec<AccountId> ) -> Promise {
+        self.__pay_out_net(payees)
+    }
+    // abort if the payee list is in any way funny ...
+    fn test_payees(&mut self, payees: Vec<AccountId> ) -> bool {
         // count the recipients.  
         // u32 only goes to 4 billion, and there are 8+ billion people in the world ...
         //let count: u64 = payees.len().try_into().unwrap(); 
@@ -57,11 +65,8 @@ impl Distrotron {
         // Fail if none.
         assert!(count > 0, "Empty recipient list");
 
-        // count the money:
-        let total_payment: Balance = env::attached_deposit();
-        // Fail if none.
-        assert!(total_payment > 0, "No payment attached");
-
+        // count the money & fail if none.
+        assert!(env::attached_deposit() > 0, "No payment attached");
 
         // Other tests:
         //
@@ -81,8 +86,43 @@ impl Distrotron {
         */
 
         // but what's the point if it can still fail?
+        
+        true
+    }
+
+    // Pay out the complete sum to the payees, no matter the gas.
+    fn __pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
+        self.test_payees(payees.clone());
+
+        let total_payment: Balance = env::attached_deposit();
+        let count: u128 = payees.len().try_into().unwrap();
+
+        // divide the yocto by the number of payees to get the individual payouts
+        // NOTE: this is integer division.  
+        // the remainder, some integer yocto less than count, will be abandoned in this contract account.
+        // (At time of writing, 1 yocto is worth less than 10*-24 cents.)
+        
+        let slice = total_payment / count; 
+        let transfer_promise = self.transfer_to_each(payees, slice);
+        let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
+                                                                        json!({
+                                                                            //"amount": JsonBalance(slice)  // nope.
+                                                                            "amount": U128(slice)
+                                                                        }).to_string().into_bytes(),
+                                                                        0, // no payment 
+                                                                        SOMEGAS
+                                                                        );
+        transfer_promise.then(finish)
+    }
 
 
+    // Pay out the sum to the payees, but hold back a small amount to cover gas.
+    fn __pay_out_net(&mut self, payees: Vec<AccountId> ) -> Promise {
+
+        self.test_payees(payees.clone());
+
+        let total_payment: Balance = env::attached_deposit();
+        let count: u128 = payees.len().try_into().unwrap();
 
         // estimate the gas costs:
         // 0.0001 near per Tgas seems to be the price lately.
@@ -128,16 +168,7 @@ impl Distrotron {
         // return the rest to the caller, to cover the gas cost
         let refund = total_payment - (net_slice * count);
 
-        // pay each payee in a loop
-        let promises: Vec<Promise> = payees.into_iter().map(|p| {
-            Promise::new(p.to_string()).transfer(net_slice)
-        } ).collect();
-        
-        // boil all those promises down into a super-promise
-        let mut big_p = promises[0].clone();
-        for pi in 1..promises.len() {
-            big_p = big_p.and(promises[pi].clone());
-        }
+        let transfer_promise = self.transfer_to_each(payees, net_slice);
 
         // don't forget your change!
         let nickelback = Promise::new(env::signer_account_id()).transfer(refund);
@@ -150,7 +181,22 @@ impl Distrotron {
                                                                         0, // no payment 
                                                                         est_gas_end.try_into().unwrap()
                                                                         );
-        big_p.then(nickelback).then(finish)
+        transfer_promise.then(nickelback).then(finish)
+    }
+
+    fn transfer_to_each(&self, payees: Vec<AccountId>, sum: Balance) -> Promise {
+        // pay each payee in a loop
+        let promises: Vec<Promise> = payees.into_iter().map(|p| {
+            Promise::new(p.to_string()).transfer(sum)
+        } ).collect();
+        
+        // boil all those promises down into a super-promise
+        let mut big_p = promises[0].clone();
+        for pi in 1..promises.len() {
+            big_p = big_p.and(promises[pi].clone());
+        }
+
+        big_p
     }
 
     pub fn report_payment(&self, amount: JsonBalance) -> JsonBalance { 
@@ -192,15 +238,11 @@ impl Distrotron {
             PromiseResult::NotReady => unreachable!(),
             PromiseResult::Failed => env::panic(b"minter contract failure"),
             PromiseResult::Successful(val) => {
-                let account_ids = near_sdk::serde_json::from_slice::<Vec<AccountId>>(&val).unwrap();
+                let payees = near_sdk::serde_json::from_slice::<Vec<AccountId>>(&val).unwrap();
 
                // test for length:
-                assert!( account_ids.len() > 0, "no minters found");
-                ext_self::pay_out(account_ids, 
-                   &env::current_account_id(),  
-                     env::attached_deposit(),                // all attached funds
-                     env::prepaid_gas() - (env::used_gas() + SOMEGAS)  // (almost) all remaining gas
-                )
+                assert!( payees.len() > 0, "no minters found");
+                self.__pay_out(payees)
             }
         }
     }
@@ -333,7 +375,7 @@ mod unit_tests {
         let mut c = get_context(vec![], false);
         c.attached_deposit = to_ynear(10);
         testing_env!(c);
-        let contract = Distrotron {};
+        let mut contract = Distrotron {};
         contract.pay_minters("i".to_string()); // invalid; minimum length is 2
     }
     // // should fail if list_minters fails on the target contact

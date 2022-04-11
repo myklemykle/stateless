@@ -7,43 +7,49 @@
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
+use near_sdk::collections::Vector;
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
 
 near_sdk::setup_alloc!();
 
 #[near_bindgen]
-#[derive(Default, BorshDeserialize, BorshSerialize)]
+#[derive(BorshDeserialize, BorshSerialize)]
 pub struct Stub {
-    // TODO: array of account ids, or blank?
+    minters: Vector<AccountId>
 }
-//
-// // money in yocto:
-// pub type AmtYocto = u128; 
-// pub type AmtYoctoU128 = U128; 
-//
-// const LOTSAGAS: u64 = 5_000_000_000_000;
-//
-// // the list_minter API on a Mintbase contract:
-// #[ext_contract(ext_mc)]
-// trait MinterContract {
-//     fn list_minters(&self) -> Vec<AccountId>;
-// }
-//
-// #[ext_contract(ext_self)]
-// trait MyContract {
-//     fn list_minters_cb(&self) -> Promise;
-//     fn pay_out(&self, payees: Vec<AccountId>) -> Promise;
-// }
 
+impl Default for Stub {
+    fn default() -> Self {
+        let mut minters = Vector::new(b"asdf".to_vec());
+        minters.push(&"alice.foo".to_string());
+        minters.push(&"bob.foo".to_string());
+        Self {
+            minters: minters
+        }
+    }
+}
 
 // our contract:
 #[near_bindgen]
 impl Stub {
 
+    // Right after this contract is deployed, we need to initialize storage 
+    // by calling either self.mock_minters() or this no-op init() method,
+    // which triggers a call to self.default().
+    // Otherwise, any view method call will trigger that default() method,
+    // leading to an "illegal storage_write() in view method" failure.
+    pub fn init (&mut self) -> bool {
+        true
+    }
+
+    pub fn mock_minters(&mut self, minters: Vec<AccountId>) {
+        self.minters.clear();
+        self.minters.extend(minters);
+    }
+
     pub fn list_minters(&self) -> Vec<AccountId> {
-        // return vector of account ids
-        vec!["alice.test.near".to_string(), "bob.test.near".to_string()]
+        self.minters.to_vec()
     }
 
     pub fn be_good(&self) -> bool {
@@ -118,13 +124,27 @@ mod stub_tests {
         let mut c = get_context(vec![], false);
         c.attached_deposit = to_ynear(10);
         testing_env!(c);
-        let mut contract = Stub {};
+        let mut contract = Stub::default();
 
+        contract.init();
         let chumps = contract.list_minters();
-        assert_eq!(chumps[0], "alice.testnet");
-        assert_eq!(chumps[1], "bob.testnet");
+        assert_eq!(chumps[0], "alice.foo");
+        assert_eq!(chumps[1], "bob.foo");
     }
 
 
+    #[test]
+    fn mock_minters_1() {
+        let mut c = get_context(vec![], false);
+        c.attached_deposit = to_ynear(10);
+        testing_env!(c);
+        let mut contract = Stub::default();
+
+        contract.mock_minters(["mario.testnet".to_string(), "luigi.testnet".to_string()].to_vec());
+
+        let chumps = contract.list_minters();
+        assert_eq!(chumps[0], "mario.testnet");
+        assert_eq!(chumps[1], "luigi.testnet");
+    }
 
 }
