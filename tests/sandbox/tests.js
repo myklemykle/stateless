@@ -20,18 +20,18 @@ let testUsers = {
 	emily: ''
 };
 
-function getConfig(env) {
+function getConfig(env = process.env.NEAR_ENV || "sandbox") {
   switch (env) {
     case "testnet":
       return {
         networkId: "testnet",
-        // nearnodeUrl: "http://23.23.23.101:3030",
+				nearnodeUrl: "rpc.testnet.near.org",
         masterAccount: "mykletest.testnet",
         contractAccount: "distro_test",
 				stubAccount: "stub",
 				keyPath: "/Volumes/External/mykle/.near-credentials/testnet/mykletest.testnet.json",
       };
-    case "sandbox":
+		case "sandbox": // remote sandbox
       return {
         networkId: "sandbox",
         nearnodeUrl: "http://nearnode:3030",
@@ -40,7 +40,7 @@ function getConfig(env) {
 				stubAccount: "stub",
 				keyPath: "/Volumes/External/mykle/tmp/near-sandbox/validator_key.json",
       };
-    case "local":
+		case "local": // local sandbox
       return {
         networkId: "sandbox",
         nearnodeUrl: "http://localhost:3030",
@@ -52,20 +52,17 @@ function getConfig(env) {
   }
 }
 
-function n2y(near) {
-	return utils.format.parseNearAmount(near.toString());
-}
-function y2n(yocto) { 
-	return utils.format.formatNearAmount(yocto);
-}
+function n2y(near) { return utils.format.parseNearAmount(near.toString()); }
+function y2n(yocto) { return utils.format.formatNearAmount(yocto); }
 
 function fullAccountName(prefix){
 	return prefix + '.' + config.masterAccount;
 }
 
-async function connectToSandbox() {
-	console.log("connecting to " + (process.env.NEAR_ENV || "sandbox"));
-  config = getConfig(process.env.NEAR_ENV || "sandbox");
+async function connectToNear() {
+  config = getConfig();
+	console.log("connecting to " + config.networkId);
+
   const keyFile = require(config.keyPath);
   masterKey = nearAPI.utils.KeyPair.fromString(
     keyFile.secret_key || keyFile.private_key
@@ -115,8 +112,15 @@ async function makeTestUsers(){
 		testUsers[u] = await createTestUser(u, 1000);
 	});
 }
+async function makeNUsers(count){
+	for (let n = 0; n<count; n++) { 
+		u = "user" + n;
+		testUsers[u] = await createTestUser(u, 1000);
+	};
+	console.log("loaded " + count + " test users");
+}
 
-async function loadTestUsers(){
+async function loadTestUsers(){ // also loads the stub account
 	userList = Object.keys(testUsers);
 	userList.push(config.stubAccount);
 
@@ -129,6 +133,23 @@ async function loadTestUsers(){
 	return testUsers;
 }
 
+async function loadNUsers(count){ // also loads the stub account
+	let userList = [];
+	for (let n = 0; n<count; n++) { 
+		userList.push("user" + n);
+	}
+	userList.push(config.stubAccount);
+
+	userList.forEach(async function(u){ 
+		let accountId = fullAccountName(u);
+		keyStore.setKey(config.networkId, accountId, masterKey);
+		testUsers[u] = new nearAPI.Account(near.connection, accountId);
+	});
+
+	console.log("loaded " + count + " test users");
+	return testUsers;
+}
+
 async function deployStub() {
 	const stubwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/stub.wasm"));
 	const _stubAccount = await createTestUser(config.stubAccount);
@@ -136,12 +157,7 @@ async function deployStub() {
 
   console.log("stub deployed");
 
-	const stubContract = new nearAPI.Contract(
-		_stubAccount, // will call it
-		fullAccountName(config.stubAccount), // name (string) of acct where contract is deployed
-		{changeMethods: ["init","mock_minters"], 
-			viewMethods: ["list_minters","be_good"]}
-	);
+	const stubContract = loadStub(_stubAccount);
 	await stubContract.init({args:{}});
 
   console.log("stub initialized");
@@ -149,7 +165,16 @@ async function deployStub() {
 	return _stubAccount;
 }
 
-async function deployMain() {
+function loadStub(acct) {
+	return new nearAPI.Contract(
+		acct, // will call it
+		fullAccountName(config.stubAccount), // name (string) of acct where contract is deployed
+		{changeMethods: ["init","mock_minters"], 
+			viewMethods: ["list_minters","be_good"]}
+	);
+}
+
+async function deployDistro() {
   const contractwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/distrotron.wasm"));
 	const _contractAccount = await createTestUser(config.contractAccount, 10000);
 	await _contractAccount.deployContract(contractwasm);
@@ -158,10 +183,26 @@ async function deployMain() {
 	return _contractAccount;
 }
 
+function loadDistro(acct) { 
+	return new nearAPI.Contract(
+		acct, // will call it
+		fullAccountName(config.contractAccount), // name (string) of acct where contract is deployed
+		{changeMethods: ["pay_minters", "pay_out", "pay_out_net"]}
+	);
+}
+
 async function totalBalance(acct){
 	b = await acct.getAccountBalance();
 	return BigInt(b.total); 
 }
+
+
+
+
+//////////
+// the tests:
+// ////////
+
 
 async function testPayOut() {
 	let users = await loadTestUsers();
@@ -174,13 +215,9 @@ async function testPayOut() {
 		}
 	};
 
-	const distro = new nearAPI.Contract(
-		users.carol, // will call it
-		fullAccountName(config.contractAccount), // name (string) of acct where contract is deployed
-		{changeMethods: ["pay_out", "pay_out_net"]}
-	);
+	const distro = loadDistro(users.carol);
 
-	// 2. have carol send some money to distrotron
+	// have carol send some money to distrotron
 	
 	net_payment = BigInt( await distro.pay_out( { 
 		args: {
@@ -190,7 +227,7 @@ async function testPayOut() {
 		amount: n2y(10),				// attached near
 	}));
 
-	// 3. check that it was distributed to alice and bob
+	// check that it was distributed to alice and bob
 	
 	balances.after = {
 			"alice": await totalBalance(users.alice),
@@ -203,10 +240,66 @@ async function testPayOut() {
 	assert(balances.before.alice + net_payment == balances.after.alice, "alice bad balance");
 	assert(balances.before.bob + net_payment == balances.after.bob, "bob bad balance");
 
-	// 4. What did Carol pay for gas?
+	// What did Carol pay for gas?
 	console.log("gas cost: " + y2n( balances.before.carol - (balances.after.carol + (BigInt(2) * net_payment)) ) + " NEAR");
 
 }  
+
+// actually tests payments from 1 user to (n-1) users
+async function testPayNMinters(n) {
+	let users = await loadNUsers(n);
+	let balances = {before: {}, after: {}};
+
+	console.log("balances before:");
+	for(let count=0; count<n; count++) {
+		let u = "user" + count;
+		balances.before[u] = await totalBalance(users[u]);
+		console.log(u + ": " + y2n(balances.before[u]));
+	}
+	
+	// user0 is the payer
+	const distro = loadDistro(users.user0);
+	const stub = loadStub(users.stub);
+
+	// users 1-(n-1) are the payees
+	let minters = [];
+	for(let count=1; count<n; count++) {
+		minters.push(fullAccountName("user" + count));
+	}
+	await stub.mock_minters({
+		args: {minters: minters}
+	});
+
+	// have user0 send some money to distrotron
+	
+	net_payment = BigInt( await distro.pay_minters( { 
+		args: {
+			minter_contract: fullAccountName(config.stubAccount)
+		}, 
+		gas: "300000000000000", // attached GAS (optional)
+		amount: n2y(10),				// attached near
+	}));
+
+	console.log("balances after:");
+	for(let count=0; count<n; count++) {
+		let u = "user" + count;
+		balances.after[u] = await totalBalance(users[u]);
+		console.log(u + ": " + y2n(balances.before[u]));
+	}
+
+	console.log("Net payment: " + net_payment + " = " + y2n(net_payment) + " NEAR");
+
+	// assert it all worked out:
+	for(let count=1; count<n; count++) {
+		let u = "user" + count;
+		assert(balances.before[u] + net_payment == balances.after[u], u + "bad balance");
+	}
+
+	// what did user0 pay for gas?
+	let gascost =  balances.before.user0 - (balances.after.user0 + (BigInt(n - 1) * net_payment));
+	console.log("gas cost: " + gascost + " yocto = " + y2n(gascost) + " NEAR");
+
+}
 
 async function testPayMinters() {
 	let users = await loadTestUsers();
@@ -219,17 +312,8 @@ async function testPayMinters() {
 		}
 	};
 
-	const distro = new nearAPI.Contract(
-		users.bob, // will call it
-		fullAccountName(config.contractAccount), // name (string) of acct where contract is deployed
-		{changeMethods: ["pay_minters"]}
-	);
-
-	const stub = new nearAPI.Contract(
-		users.stub, // will call it
-		fullAccountName(config.stubAccount), // name (string) of acct where contract is deployed
-		{changeMethods: ["mock_minters"]}
-	);
+	const distro = loadDistro(users.bob);
+	const stub = loadStub(users.stub);
 
 	// 1. mock up a minters list
 	await stub.mock_minters({
@@ -259,19 +343,14 @@ async function testPayMinters() {
 	assert(balances.before.alice + net_payment == balances.after.alice, "alice bad balance");
 	assert(balances.before.carol + net_payment == balances.after.carol, "carol bad balance");
 
-	// 4. What did Bob pay for gas?
-	console.log("gas cost: " + y2n( balances.before.bob - (balances.after.bob + (BigInt(2) * net_payment)) ) + " NEAR");
+	// 4. what did bob pay for gas?
+	console.log("gas cost: " + y2n( balances.before.bob - (balances.after.bob + (BigInt(2) * net_payment)) ) + " near");
 }  
 
 
 async function test_stub(){
 	let users = await loadTestUsers();
-	const stub = new nearAPI.Contract(
-		users.carol, // will call it
-		fullAccountName(config.stubAccount), // name (string) of acct where contract is deployed
-		{changeMethods: ["init","mock_minters"], 
-			viewMethods: ["list_minters","be_good"]}
-	);
+	const stub = loadStub(users.carol);
 
 	// Initialize the contract storage --
 	// only ecessary the first time it's called after deployment (deployStub() handles this)
@@ -306,7 +385,7 @@ async function main(){
 	const started = new Date();
 	const myArgs = process.argv.slice(2);
 
-  await connectToSandbox();
+  await connectToNear();
 
 	switch (myArgs[0]) {
 			// setup targets:
@@ -315,11 +394,16 @@ async function main(){
 			break;
 
 		case 'deploy_main':
-			await deployMain();
+		case 'deploy_distro':
+			await deployDistro();
 			break;
 
 		case 'make_test_users':
 			await makeTestUsers();
+			break;
+
+		case 'make_n_users':
+			await makeNUsers(process.argv.slice(3));
 			break;
 
 			// test targets:
@@ -331,6 +415,11 @@ async function main(){
 		case 'pay_minters':
 		case 'test_pay_minters':
 			await testPayMinters();
+			break;
+
+		case 'pay_n_minters':
+		case 'test_pay_n_minters':
+			await testPayNMinters(process.argv.slice(3));
 			break;
 
 		case 'stub':
