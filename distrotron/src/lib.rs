@@ -12,21 +12,18 @@ use near_sdk::serde_json::json;
 
 near_sdk::setup_alloc!();
 
-// add the following attributes to prepare your code for serialization and invocation on the blockchain
-// More built-in Rust attributes here: https://doc.rust-lang.org/reference/attributes.html#built-in-attributes-index
 #[near_bindgen]
 #[derive(Default, BorshDeserialize, BorshSerialize)]
 pub struct Distrotron {
-    // TODO: array of account ids, or blank?
 }
 
-// near_sdk::Balance is u128, so:
+// near_sdk::Balance is u128, so the JSON BigInt equiv is:
 pub type JsonBalance = U128; 
 
 const SOMEGAS: u64 = 10_000_000_000_000;
 const LIST_MINTERS_GAS: u64 = SOMEGAS;
 
-// the list_minter API method on a Mintbase contract:
+// the list_minters() API method on a Mintbase contract:
 #[ext_contract(ext_mc)]
 trait MinterContract {
     fn list_minters(&self) -> Vec<AccountId>;
@@ -43,8 +40,6 @@ trait MyContract {
 #[near_bindgen]
 impl Distrotron {
     /// Returns the amount of NEAR that was paid to each recipient, in Yocto
-    /// This should generate some kind of log ... although really the NEAR transaction
-    /// record will hopefully be enough there, if it's legible in the Explorer.
     ///
     #[payable]
     pub fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
@@ -55,6 +50,7 @@ impl Distrotron {
     pub fn pay_out_net(&mut self, payees: Vec<AccountId> ) -> Promise {
         self.__pay_out_net(payees)
     }
+
     // abort if the payee list is in any way funny ...
     fn test_payees(&mut self, payees: Vec<AccountId> ) -> bool {
         // count the recipients.  
@@ -70,43 +66,44 @@ impl Distrotron {
 
         // Other tests:
         //
-        // we'd like to parse the recipients list & make sure they're not garbled,
+        // We'd like to parse the recipients list & make sure they're not garbled,
         // or else count on the transaction failing if it's not kosher.
-        //
-        // but apparently we can't test if accounts exist for some NEAR reason:
+        // But apparently we can't even test if accounts exist for some NEAR reason:
         // https://stackoverflow.com/questions/70819819/how-can-i-verify-if-a-near-address-is-valid-in-smart-contract/70820257#70820257
-        //
-        // We could at least check that the IDs are valid:
+        
+        // We could at least check that the IDs are valid format:
         // https://docs.rs/near-sdk/latest/near_sdk/env/fn.is_valid_account_id.html
-
         /*
         for acct_id in payees.clone().into_iter() {
             assert!( env::is_valid_account_id(acct_id.as_bytes()) ) ;
         }
         */
-
-        // but what's the point if it can still fail?
+        // ... but what's the point if it can still fail?
         
         true
     }
 
-    // Pay out the complete sum to the payees, no matter the gas.
+    // Pay out the complete attached sum to the payees, no matter the gas.
     fn __pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
         self.test_payees(payees.clone());
 
         let total_payment: Balance = env::attached_deposit();
         let count: u128 = payees.len().try_into().unwrap();
 
-        // divide the yocto by the number of payees to get the individual payouts
-        // NOTE: this is integer division.  
+        // Divide the yocto by the number of payees to get the individual payouts
+        // NOTE: this is integer division;
         // the remainder, some integer yocto less than count, will be abandoned in this contract account.
-        // (At time of writing, 1 yocto is worth less than 10*-24 cents.)
+        //
+        // At time of writing, that sum is so much vastly less than one cent that i'm losing money just by thinking about it.
+        //
+        // But it occurs to me that this sort of leftover must exist everywhere in the universe of
+        // traditional banking and blockchain.  One assumes, or hopes, that any sort of abuse or bug will be detected
+        // by audits.
         
         let slice = total_payment / count; 
         let transfer_promise = self.transfer_to_each(payees, slice);
         let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
                                                                         json!({
-                                                                            //"amount": JsonBalance(slice)  // nope.
                                                                             "amount": U128(slice)
                                                                         }).to_string().into_bytes(),
                                                                         0, // no payment 
@@ -133,7 +130,7 @@ impl Distrotron {
         let ypg = 1000000000;
 
         // How to truly know the gas price tho?  There's a cross-contract call you can make to see it on some other
-        // recent block ...
+        // recent block ... is that guaranteed to be same price as the one we're paying?
 
         // 1 Tgas = 10^12 gas, docs suggest it costs .45 Tgas to send funds, so we can
         //   calculate that
@@ -175,7 +172,6 @@ impl Distrotron {
 
         let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
                                                                         json!({
-                                                                            //"amount": JsonBalance(net_slice)  // nope.
                                                                             "amount": U128(net_slice)
                                                                         }).to_string().into_bytes(),
                                                                         0, // no payment 
@@ -233,6 +229,8 @@ impl Distrotron {
     pub fn list_minters_cb(&mut self) -> Promise {
         // pattern from https://docs.near.org/docs/tutorials/contracts/xcc-rust-cheatsheet :
         assert_eq!(env::promise_results_count(), 1, "This is a callback method");
+        // what else can I secure here?  can I check that the caller is the signer?  does that help?
+        // can i make sure the caller is the contract owner? does that help?
 
         match env::promise_result(0) {
             PromiseResult::NotReady => unreachable!(),
@@ -258,16 +256,14 @@ impl Distrotron {
 
 
 
-// use the attribute below for unit tests
+// unit tests
 #[cfg(test)]
 mod unit_tests {
     use super::*;
     use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
 
-    // part of writing unit tests is setting up a mock context
-    // in this example, this is only needed for env::log in the contract
-    // this is also a useful list to peek at when wondering what's available in env::*
+    // mock context
     fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
         VMContext {
             current_account_id: "alice.testnet".to_string(),
