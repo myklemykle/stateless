@@ -130,7 +130,7 @@ impl Distrotron {
         let ypg = 1000000000;
 
         // How to truly know the gas price tho?  There's a cross-contract call you can make to see it on some other
-        // recent block ... is that guaranteed to be same price as the one we're paying?
+        // recent block ...
 
         // 1 Tgas = 10^12 gas, docs suggest it costs .45 Tgas to send funds, so we can
         //   calculate that
@@ -172,6 +172,7 @@ impl Distrotron {
 
         let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
                                                                         json!({
+                                                                            //"amount": JsonBalance(net_slice)  // nope.
                                                                             "amount": U128(net_slice)
                                                                         }).to_string().into_bytes(),
                                                                         0, // no payment 
@@ -256,14 +257,16 @@ impl Distrotron {
 
 
 
-// unit tests
+// use the attribute below for unit tests
 #[cfg(test)]
 mod unit_tests {
     use super::*;
     use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
 
-    // mock context
+    // part of writing unit tests is setting up a mock context
+    // in this example, this is only needed for env::log in the contract
+    // this is also a useful list to peek at when wondering what's available in env::*
     fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
         VMContext {
             current_account_id: "alice.testnet".to_string(),
