@@ -220,7 +220,7 @@ impl Distrotron {
                     // plus what we just attached to the other promise above,
                      + LIST_MINTERS_GAS
                     // plus a wee bit more, just so this last command itself can excecute
-                     + SOMEGAS 
+                     + (5 * SOMEGAS )
                     ) 
                     ////////////////////////////////
                   ))
