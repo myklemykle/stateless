@@ -25,7 +25,7 @@ function getConfig(env = process.env.NEAR_ENV || "sandbox") {
     case "testnet":
       return {
         networkId: "testnet",
-				nearnodeUrl: "rpc.testnet.near.org",
+				nearnodeUrl: "http://rpc.testnet.near.org",
         masterAccount: "mykletest.testnet",
         contractAccount: "distro_test",
 				stubAccount: "stub",
@@ -82,7 +82,7 @@ async function connectToNear() {
 }
 
 async function createTestUser(
-  accountPrefix, initBalance = 100
+  accountPrefix, initBalance = 10
 ) {
   let accountId = fullAccountName(accountPrefix);
   keyStore.setKey(config.networkId, accountId, masterKey);
@@ -109,28 +109,35 @@ async function createTestUser(
 async function makeTestUsers(){
 	console.log(Object.keys(testUsers));
 	Object.keys(testUsers).forEach(async function(u){ 
-		testUsers[u] = await createTestUser(u, 1000);
+		testUsers[u] = await createTestUser(u, 10);
 	});
 }
 async function makeNUsers(count){
 	for (let n = 0; n<count; n++) { 
 		u = "user" + n;
-		testUsers[u] = await createTestUser(u, 1000);
+		testUsers[u] = await createTestUser(u, 10);
 	};
 	console.log("loaded " + count + " test users");
 }
 
-async function loadTestUsers(){ // also loads the stub account
+function loadTestUsers(){ // also loads the stub account
 	userList = Object.keys(testUsers);
 	userList.push(config.stubAccount);
 
-	userList.forEach(async function(u){ 
-		let accountId = fullAccountName(u);
-		keyStore.setKey(config.networkId, accountId, masterKey);
-		testUsers[u] = new nearAPI.Account(near.connection, accountId);
+	userList.forEach(function(u){ 
+		// let accountId = fullAccountName(u);
+		// keyStore.setKey(config.networkId, accountId, masterKey);
+		// testUsers[u] = new nearAPI.Account(near.connection, accountId);
+		testUsers[u] = loadTestUser(u);
 	});
 
 	return testUsers;
+}
+
+function loadTestUser(u){
+		let accountId = fullAccountName(u);
+		keyStore.setKey(config.networkId, accountId, masterKey);
+		return new nearAPI.Account(near.connection, accountId);
 }
 
 async function loadNUsers(count){ // also loads the stub account
@@ -152,7 +159,7 @@ async function loadNUsers(count){ // also loads the stub account
 
 async function deployStub() {
 	const stubwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/stub.wasm"));
-	const _stubAccount = await createTestUser(config.stubAccount);
+	const _stubAccount = await createTestUser(config.stubAccount, 100);
 	await _stubAccount.deployContract(stubwasm);
 
   console.log("stub deployed");
@@ -176,7 +183,7 @@ function loadStub(acct) {
 
 async function deployDistro() {
   const contractwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/distrotron.wasm"));
-	const _contractAccount = await createTestUser(config.contractAccount, 10000);
+	const _contractAccount = await createTestUser(config.contractAccount, 100);
 	await _contractAccount.deployContract(contractwasm);
 
   console.log("main contract deployed");
@@ -205,7 +212,7 @@ async function totalBalance(acct){
 
 
 async function testPayOut() {
-	let users = await loadTestUsers();
+	let users = loadTestUsers();
 
 	let balances = {
 		before: {
@@ -223,8 +230,8 @@ async function testPayOut() {
 		args: {
 			payees: [users.alice.accountId, users.bob.accountId]
 	}, 
-		gas: "300000000000000", // attached GAS (optional)
-		amount: n2y(10),				// attached near
+		// gas: "300000000000000", // attached GAS (optional)
+		amount: n2y(1),				// attached near
 	}));
 
 	// check that it was distributed to alice and bob
@@ -241,8 +248,60 @@ async function testPayOut() {
 	assert(balances.before.bob + net_payment == balances.after.bob, "bob bad balance");
 
 	// What did Carol pay for gas?
-	console.log("gas cost: " + y2n( balances.before.carol - (balances.after.carol + (BigInt(2) * net_payment)) ) + " NEAR");
+	let gascost =  balances.before.carol - (balances.after.carol + (BigInt(2) * net_payment)); 
+	console.log("gas cost: " + gascost + " yocto = " + y2n(gascost) + " NEAR");
 
+}  
+
+async function testPayOutBad () {
+	let users = loadTestUsers();
+	users.distro = loadTestUser(config.contractAccount);
+
+	let balances = {
+		before: {
+			"alice": await totalBalance(users.alice),
+			"bob": await totalBalance(users.bob),
+			"carol": await totalBalance(users.carol),
+			"distro": await totalBalance(users.distro),
+		}
+	};
+
+	const distro = loadDistro(users.carol);
+
+	// have carol send some money to distrotron
+	
+	try { 
+		net_payment = BigInt( await distro.pay_out( { 
+			args: {
+				payees: [users.alice.accountId, "your_mom", users.bob.accountId]
+		}, 
+			// gas: "300000000000000", // attached GAS (optional)
+			amount: n2y(1),				// attached near
+		}));
+		//
+		// should fail:
+		assert(false, "failure failure: failure failed to fail");
+	} catch {
+
+		// check that nothing was distributed
+		
+		balances.after = {
+				"alice": await totalBalance(users.alice),
+				"bob": await totalBalance(users.bob),
+				"carol": await totalBalance(users.carol),
+				"distro": await totalBalance(users.distro),
+		};
+
+		// What did Carol pay 
+
+		let cost = balances.before.carol - balances.after.carol;
+		console.log("cost: " + cost + " = " + y2n( cost ) + " NEAR");
+
+		console.log(balances);
+		assert(balances.before.alice == balances.after.alice, "alice bad balance");
+		assert(balances.before.bob == balances.after.bob, "bob bad balance");
+
+	}
 }  
 
 // actually tests payments from 1 user to (n-1) users
@@ -277,7 +336,7 @@ async function testPayNMinters(n) {
 			minter_contract: fullAccountName(config.stubAccount)
 		}, 
 		gas: "300000000000000", // attached GAS (optional)
-		amount: n2y(10),				// attached near
+		amount: n2y(1),				// attached near
 	}));
 
 	console.log("balances after:");
@@ -301,8 +360,59 @@ async function testPayNMinters(n) {
 
 }
 
+async function testPayBadMinters() {
+	let users = loadTestUsers();
+
+	let balances = {
+		before: {
+			"alice": await totalBalance(users.alice),
+			"bob": await totalBalance(users.bob),
+			"carol": await totalBalance(users.carol),
+		}
+	};
+
+	// 1. mock up a minters list with a nonexistent user on it
+	const stub = loadStub(users.stub);
+	await stub.mock_minters({
+		args: {minters: [users.alice.accountId, "asdf.mcasdfserson", users.carol.accountId, "count_chocula"]}
+	});
+
+	// 2. have bob send some money to distrotron
+	const distro = loadDistro(users.bob);
+	try { 
+		net_payment = BigInt( await distro.pay_minters( { 
+			args: {
+				minter_contract: fullAccountName(config.stubAccount)
+		}, 
+			gas: "300000000000000", // attached GAS (optional)
+			amount: n2y(1),				// attached near
+		}));
+
+		// we expect that to fail ...
+		assert(false, "bad payment should have failed");
+	} catch {
+
+		// 3. check that funds didn't move
+		balances.after = {
+				"alice": await totalBalance(users.alice),
+				"bob": await totalBalance(users.bob),
+				"carol": await totalBalance(users.carol),
+		};
+
+		console.log(balances);
+		assert(balances.before.alice == balances.after.alice, "alice bad balance");
+		assert(balances.before.bob == balances.after.carol, "bob bad balance");
+		assert(balances.before.carol == balances.after.carol, "carol bad balance");
+	}
+
+	// 4. what did bob pay for gas?
+	let gascost =  balances.before.bob - (balances.after.bob + (BigInt(2) * net_payment)); 
+	console.log("gas cost: " + gascost + " yocto = " + y2n(gascost) + " NEAR");
+		
+}  
+
 async function testPayMinters() {
-	let users = await loadTestUsers();
+	let users = loadTestUsers();
 
 	let balances = {
 		before: {
@@ -327,7 +437,7 @@ async function testPayMinters() {
 			minter_contract: fullAccountName(config.stubAccount)
 	}, 
 		gas: "300000000000000", // attached GAS (optional)
-		amount: n2y(10),				// attached near
+		amount: n2y(1),				// attached near
 	}));
 
 	// 3. check that it was distributed to alice and carol
@@ -344,12 +454,13 @@ async function testPayMinters() {
 	assert(balances.before.carol + net_payment == balances.after.carol, "carol bad balance");
 
 	// 4. what did bob pay for gas?
-	console.log("gas cost: " + y2n( balances.before.bob - (balances.after.bob + (BigInt(2) * net_payment)) ) + " near");
+	let gascost =  balances.before.bob - (balances.after.bob + (BigInt(2) * net_payment)); 
+	console.log("gas cost: " + gascost + " yocto = " + y2n(gascost) + " NEAR");
 }  
 
 
-async function test_stub(){
-	let users = await loadTestUsers();
+async function testStub(){
+	let users = loadTestUsers();
 	const stub = loadStub(users.carol);
 
 	// Initialize the contract storage --
@@ -385,7 +496,7 @@ async function main(){
 	const started = new Date();
 	const myArgs = process.argv.slice(2);
 
-  await connectToNear();
+	await connectToNear();
 
 	switch (myArgs[0]) {
 			// setup targets:
@@ -412,9 +523,19 @@ async function main(){
 			await testPayOut();
 			break;
 
+		case 'pay_out_bad':
+		case 'test_pay_out_bad':
+			await testPayOutBad();
+			break;
+
 		case 'pay_minters':
 		case 'test_pay_minters':
 			await testPayMinters();
+			break;
+
+		case 'pay_bad_minters':
+		case 'test_pay_bad_minters':
+			await testPayBadMinters(process.argv.slice(3));
 			break;
 
 		case 'pay_n_minters':
@@ -423,13 +544,13 @@ async function main(){
 			break;
 
 		case 'stub':
-		case 'teststub':
-			await test_stub();
+		case 'test_stub':
+			await testStub();
 			break;
 
 
 		default:
-			await testPayOut();
+			console.log("bad target");
 	}
 
 	const finished = new Date();
