@@ -20,6 +20,8 @@ let testUsers = {
 	emily: ''
 };
 
+const LOTSAGAS = "300000000000000"; // the max that can be attached, actually.
+
 function getConfig(env = process.env.NEAR_ENV || "sandbox") {
   switch (env) {
     case "testnet":
@@ -194,7 +196,7 @@ function loadDistro(acct) {
 	return new nearAPI.Contract(
 		acct, // will call it
 		fullAccountName(config.contractAccount), // name (string) of acct where contract is deployed
-		{changeMethods: ["pay_minters", "pay_out", "pay_out_net"]}
+		{changeMethods: ["pay_minters", "pay_out"]}
 	);
 }
 
@@ -230,7 +232,7 @@ async function testPayOut() {
 		args: {
 			payees: [users.alice.accountId, users.bob.accountId]
 	}, 
-		// gas: "300000000000000", // attached GAS (optional)
+		gas: LOTSAGAS, // attached GAS (optional)
 		amount: n2y(1),				// attached near
 	}));
 
@@ -275,7 +277,7 @@ async function testPayOutBad () {
 			args: {
 				payees: [users.alice.accountId, "your_mom", users.bob.accountId]
 		}, 
-			// gas: "300000000000000", // attached GAS (optional)
+			gas: LOTSAGAS, // attached GAS (optional)
 			amount: n2y(1),				// attached near
 		}));
 		//

@@ -33,6 +33,7 @@ trait MinterContract {
 trait MyContract {
     fn list_minters_cb(&self) -> Promise;
     fn pay_out(&self, payees: Vec<AccountId>) -> Promise;
+    fn report_payment(&self, amount: JsonBalance) -> JsonBalance ;
 }
 
 
@@ -44,11 +45,6 @@ impl Distrotron {
     #[payable]
     pub fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
         self.__pay_out(payees)
-    }
-
-    #[payable]
-    pub fn pay_out_net(&mut self, payees: Vec<AccountId> ) -> Promise {
-        self.__pay_out_net(payees)
     }
 
     // abort if the payee list is in any way funny ...
@@ -101,7 +97,7 @@ impl Distrotron {
         // by audits.
         
         let slice = total_payment / count; 
-        let transfer_promise = self.transfer_to_each(payees, slice);
+
         let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
                                                                         json!({
                                                                             "amount": U128(slice)
@@ -109,79 +105,12 @@ impl Distrotron {
                                                                         0, // no payment 
                                                                         SOMEGAS
                                                                         );
-        transfer_promise.then(finish)
+        
+        let payment_promise = self.pay_each(payees.clone(), slice);                                     // all of it
+        payment_promise.then(finish)
     }
 
-
-    // Pay out the sum to the payees, but hold back a small amount to cover gas.
-    fn __pay_out_net(&mut self, payees: Vec<AccountId> ) -> Promise {
-
-        self.test_payees(payees.clone());
-
-        let total_payment: Balance = env::attached_deposit();
-        let count: u128 = payees.len().try_into().unwrap();
-
-        // estimate the gas costs:
-        // 0.0001 near per Tgas seems to be the price lately.
-        // that's 0.0001 near per 10^12 gas,
-        // which is 0.0001 * 10^24 yoctonear per 10^12 gas,
-        // so 0.0001 * 10^12 yocto per gas,
-        // which is 1 * 10^9 yocto.
-        let ypg = 1000000000;
-
-        // How to truly know the gas price tho?  There's a cross-contract call you can make to see it on some other
-        // recent block ...
-
-        // 1 Tgas = 10^12 gas, docs suggest it costs .45 Tgas to send funds, so we can
-        //   calculate that
-        let est_gas_per_payee:u128 = 45000000000; // 0.45 Tgas (4.5^11)
-        // convert to yocto
-        let est_fee_per_payee:Balance = est_gas_per_payee * ypg;
-        
-        //   We can also do testing to get a pretty good idea of the gas cost of pay_out,
-        //   and see how it expands / contracts with the distro list.
-        //   Then when running I think we can maybe get some idea of the current gas cost,
-        //   and estimate something that way.
-        let est_gas_other:u128 = 100000000000; // 0.1 Tgas, for now.
-        // convert to near
-        let est_fee_other:Balance = est_gas_other * ypg;
-
-        // and we also have to account for the final function call:
-        //let est_gas_end:u128 = 100000000000; // 0.1 Tgas, for now.
-        // Nope, turns out to be more ...
-        let est_gas_end:u128 = 1000000000000; // 0.1 Tgas, for now.
-        let est_fee_end:Balance = est_gas_end * ypg;
-
-        //   Question is, can that gas cost change during the running of this method?  I think not
-        //   if it's not a cross-contract call.  I think it's all in the current block at the
-        //   current price ... we'll see.
-        
-        // subtract the gas costs from the yocto:
-        let net_payment = ( (total_payment - est_fee_other) - (count * est_fee_per_payee) ) - est_fee_end ;
-        
-        // divide the remaining yocto by the number of payees to get the individual payouts
-        let net_slice = net_payment / count; 
-
-        // return the rest to the caller, to cover the gas cost
-        let refund = total_payment - (net_slice * count);
-
-        let transfer_promise = self.transfer_to_each(payees, net_slice);
-
-        // don't forget your change!
-        let nickelback = Promise::new(env::signer_account_id()).transfer(refund);
-
-        let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
-                                                                        json!({
-                                                                            //"amount": JsonBalance(net_slice)  // nope.
-                                                                            "amount": U128(net_slice)
-                                                                        }).to_string().into_bytes(),
-                                                                        0, // no payment 
-                                                                        est_gas_end.try_into().unwrap()
-                                                                        );
-        transfer_promise.then(nickelback).then(finish)
-    }
-
-    fn transfer_to_each(&self, payees: Vec<AccountId>, sum: Balance) -> Promise {
+    fn pay_each(&self, payees: Vec<AccountId>, sum: Balance) -> Promise {
         // pay each payee in a loop
         let promises: Vec<Promise> = payees.into_iter().map(|p| {
             Promise::new(p.to_string()).transfer(sum)
@@ -190,7 +119,8 @@ impl Distrotron {
         // boil all those promises down into a super-promise
         let mut big_p = promises[0].clone();
         for pi in 1..promises.len() {
-            big_p = big_p.and(promises[pi].clone());
+            //big_p = big_p.and(promises[pi].clone());
+            big_p = big_p.then(promises[pi].clone());
         }
 
         big_p
@@ -255,18 +185,12 @@ impl Distrotron {
 }
 
 
-
-
-// use the attribute below for unit tests
 #[cfg(test)]
 mod unit_tests {
     use super::*;
     use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
 
-    // part of writing unit tests is setting up a mock context
-    // in this example, this is only needed for env::log in the contract
-    // this is also a useful list to peek at when wondering what's available in env::*
     fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
         VMContext {
             current_account_id: "alice.testnet".to_string(),
