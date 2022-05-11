@@ -29,9 +29,33 @@ stub_debug: target/wasm32-unknown-unknown/debug/stub.wasm
 stub_release: target/wasm32-unknown-unknown/release/stub.wasm
 
 
-# sandbox test targets:
+
+############
+# test targets:
+
+# run the unit tests of the distro contract:
+unittest: release debug 
+	cd distrotron; make test
+
+# run simulator tests
+# note: as of 5/1/2022 simulator tests still can't be compiled on a M1 mac
+simtest: release $(wildcard tests/sim/*.rs)
+	cargo test first_tests -- --nocapture
+
+# run the unit tests of the stub contract:
+stubtest: stub_debug
+	cargo test -p stub -- --nocapture
+
+#####
+# sandbox tests -- testing in a live toy NEAR instance -- requires several steps.
+# * build & test the sandbox -- not supported on M1 macs, so I do it on a seperate system
+# * start the sandbox, either locally or remotely,
+# * after launch of a remote sandbox, copy the master key to a local file
+# * set up the blockchain state for testing -- deploy contracts, create users
+# * then you can actually run the tests in tests/sandbox, using jest.
+##
 #
-# start sandbox 
+# * start sandbox 
 #  (how do i test if its already running?)
 #
 .PHONY: sandbox_start
@@ -41,36 +65,43 @@ sandbox_start:
 	../nearcore/start_sandbox.sh
 	# touch $TARGETS/sandbox_started
 
-# find/get sandbox master key
-# ~/tmp/near-sandbox: $TARGETS/sandbox_started
+##
+# * TODO: find/get sandbox master key
+# ~/tmp/near-sandbox: $TARGETS/sandbox_started 
+## for a remote instance
+# scp osboxes@nearnode:tmp/near-sandbox/validator_key.json ~/tmp/near-sandbox 
+## (for local instance, tests can just find that file ...
+#
+##
+# * set up state, then run all payment tests. This is the default.
+sandboxtest: 
+	cd tests/sandbox; npx jest -t setup; npx jest -t payment
+#
+##
+# * setup state and run all tests, including a stress test that can take several minutes to finish.
+sandboxtest_all: 
+	cd tests/sandbox; npx jest 
+#
+##
+# * just set up test state in the sandbox.
+# deploying both contracts & setting up test users can take a couple minutes.
+sandboxtest_setup: 
+	cd tests/sandbox; npx jest -t setup
 
-# scp osboxes@nearnode:tmp/near-sandbox/validator_key.json ~/tmp/near-sandbox
 
-# deploy stub contract & user
+
+##
+# these other targets are useful while iterating during test-driven development:
+# redeploy stub contract & user
 sandbox_deploy_stub: stub_release
-	node tests/sandbox/tests.js deploy_stub
+	cd tests/sandbox; npx jest -t "deploy stub"
 
-# deploy main contract & user
+# redeploy main contract & user
 sandbox_deploy_distro: release
-	node tests/sandbox/tests.js deploy_main
+	cd tests/sandbox; npx jest -t "deploy distro"
 
-# create test users
+# recreate test users
 sandbox_make_users:
-	node tests/sandbox/tests.js make_test_users
-
-sandboxtest: sandbox_deploy_stub sandbox_deploy_distro sandbox_make_users
-	node tests/sandbox/tests.js
+	cd tests/sandbox; npx jest -t "make test users"
 
 
-stubtest: stub_debug
-	cargo test -p stub -- --nocapture
-
-
-simtest: release $(wildcard tests/sim/*.rs)
-	cargo test first_tests -- --nocapture
-
-unittest: release debug 
-	cd distrotron; make test
-
-test: simtest unittest
-	cargo test -- --nocapture
