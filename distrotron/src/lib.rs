@@ -80,8 +80,12 @@ impl Distrotron {
     }
 
     // Pay out the complete attached sum to the payees, no matter the gas.
-    fn __pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
+    fn __pay_out(&mut self, mut payees: Vec<AccountId> ) -> Promise {
         self.test_payees(payees.clone());
+
+        // sort and de-dup
+        payees.sort();
+        payees.dedup();
 
         let total_payment: Balance = env::attached_deposit();
         let count: u128 = payees.len().try_into().unwrap();
@@ -160,8 +164,11 @@ impl Distrotron {
     pub fn list_minters_cb(&mut self) -> Promise {
         // pattern from https://docs.near.org/docs/tutorials/contracts/xcc-rust-cheatsheet :
         assert_eq!(env::promise_results_count(), 1, "This is a callback method");
+
         // what else can I secure here?  can I check that the caller is the signer?  does that help?
         // can i make sure the caller is the contract owner? does that help?
+
+
 
         match env::promise_result(0) {
             PromiseResult::NotReady => unreachable!(),
@@ -171,6 +178,7 @@ impl Distrotron {
 
                // test for length:
                 assert!( payees.len() > 0, "no minters found");
+
                 self.__pay_out(payees)
             }
         }

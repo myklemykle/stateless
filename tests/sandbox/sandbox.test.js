@@ -283,6 +283,49 @@ describe("payment tests", ()=>{
 		console.log("gas cost: " + gascost + " yocto = " + y2n(gascost) + " NEAR");
 
 	}  );
+	
+	test("duplicates are removed from user list", async()=>{
+		let users = loadTestUsers();
+
+		let balances = {
+			before: {
+				"alice": await totalBalance(users.alice),
+				"bob": await totalBalance(users.bob),
+				"carol": await totalBalance(users.carol),
+			}
+		};
+
+		let distro = loadDistro(users.carol);
+
+		// have carol send some money to distrotron
+		
+		net_payment = BigInt( await distro.pay_out( { 
+			args: {
+				payees: [users.alice.accountId, users.bob.accountId, users.alice.accountId]
+		}, 
+			gas: LOTSAGAS, // attached GAS (optional)
+			amount: n2y(1),				// attached near
+		}));
+
+		// check that it was distributed to alice and bob,
+		// in equal amounts, because alice was only paid once.
+		
+		balances.after = {
+				"alice": await totalBalance(users.alice),
+				"bob": await totalBalance(users.bob),
+				"carol": await totalBalance(users.carol),
+		};
+
+		console.log("Net payment: " + net_payment + " = " + y2n(net_payment) + " NEAR");
+		console.log(balances);
+		assert(balances.before.alice + net_payment == balances.after.alice, "alice bad balance");
+		assert(balances.before.bob + net_payment == balances.after.bob, "bob bad balance");
+
+		// What did Carol pay for gas?
+		let gascost =  balances.before.carol - (balances.after.carol + (BigInt(2) * net_payment)); 
+		console.log("gas cost: " + gascost + " yocto = " + y2n(gascost) + " NEAR");
+
+	}  );
 
 	test("payment to nonexistent user wont go through", async()=>{
 		let users = loadTestUsers();
