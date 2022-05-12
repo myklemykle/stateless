@@ -56,20 +56,26 @@ stubtest: stub_debug
 ##
 #
 # * start sandbox 
-#  (how do i test if its already running?)
-#
 .PHONY: sandbox_start
 sandbox_start: 
 	echo "starting sandbox:"
-	#osascript -e 'tell application "Terminal" \n do script "../nearcore/start_sandbox.sh" \n end tell'  # need remote-exec version of this script
-	../nearcore/start_sandbox.sh
-	# touch $TARGETS/sandbox_started
+	# NOTE 1: start_sandbox.sh doesn't exist.  You must copy 
+	# either sandbox_start_local.sh 
+	# or sandbox_start_remote.sh 
+	# to sandbox_start.sh ,
+	# depending on your setup.
+	cd tests/sandbox; ./start_sandbox.sh 
+	# NOTE 2: if using sandbox_start_remote.sh, you will need to copy over the master key 
+	# after starting the sandbox.  Use this scp command, changing user & host to real values:
+	#
+	# 		scp user@host:tmp/near-sandbox/validator_key.json ~/tmp/near-sandbox 
+	#
 
 ##
 # * TODO: find/get sandbox master key
 # ~/tmp/near-sandbox: $TARGETS/sandbox_started 
+#
 ## for a remote instance
-# scp osboxes@nearnode:tmp/near-sandbox/validator_key.json ~/tmp/near-sandbox 
 ## (for local instance, tests can just find that file ...
 #
 ##
