@@ -87,7 +87,12 @@ sandboxtest_all:
 # deploying both contracts & setting up test users can take a couple minutes.
 sandboxtest_setup: 
 	cd tests/sandbox; npx jest -t setup
-
+#
+###
+# * test against a mintbase contract in testnet.  
+# (this will require various variables to be set up -- see the test script for a list.)
+mintbasetest:
+	cd tests/sandbox; npx jest -t setup; npx jest -t mintbase
 
 
 ##

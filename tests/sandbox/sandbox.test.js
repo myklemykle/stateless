@@ -189,7 +189,6 @@ async function createTestUser(
 
 async function makeTestUsers(){
 	console.log(Object.keys(testUsers));
-	// Object.keys(testUsers).forEach(async function(u){ 
 	for (u of Object.keys(testUsers)) {
 		testUsers[u] = await createTestUser(u, 10);
 	};
@@ -245,20 +244,20 @@ async function loadNUsers(count){ // also loads the stub account
 
 async function deployStub() {
 	const stubwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/stub.wasm"));
-	const _minterContract = await createTestUser(config.minterContract, 100);
-	await _minterContract.deployContract(stubwasm);
+	const minterContractAccount = await createTestUser(config.minterContract, 100);
+	await minterContractAccount.deployContract(stubwasm);
 
   console.log("stub deployed");
 
-	const stubContract = loadStub(_minterContract);
+	const stubContract = getNewMinterContract(minterContractAccount);
 	await stubContract.init({args:{}});
 
   console.log("stub initialized");
 
-	return _minterContract;
+	return minterContractAccount;
 }
 
-function loadStub(acct) {
+function getNewMinterContract(acct) {
 	return new nearAPI.Contract(
 		acct, // will call it
 		fullAccountName(config.minterContract), // name (string) of acct where contract is deployed
@@ -301,13 +300,24 @@ describe("blockchain state setup (slow!)", ()=>{
 		await deployDistro();
 	});
 
-	test("deploy stub contract", async()=>{
-		await deployStub();
-	});
-
 	test("make test users", async()=>{
 		await makeTestUsers();
 	});
+
+	test("deploy stub contract", async()=>{
+		let users = loadTestUsers();
+		if (config.minterContract == "stub") { 
+			await deployStub();
+			// mock up a minters list
+			await mc.mock_minters({
+				args: {minters: [users.alice.accountId, users.carol.accountId]}
+			});
+
+		} else {
+			console.log("not using stub");
+		}
+	});
+
 });
 
 //////////
@@ -471,8 +481,8 @@ describe("payment tests", ()=>{
 		};
 
 		// 1. mock up a minters list with a nonexistent user on it
-		let stub = loadStub(users.stub);
-		await stub.mock_minters({
+		let mc = getNewMinterContract(users.stub);
+		await mc.mock_minters({
 			args: {minters: [users.alice.accountId, "asdf.mcasdfserson", users.carol.accountId, "count_chocula"]}
 		});
 
@@ -523,10 +533,10 @@ describe("payment tests", ()=>{
 		};
 
 		let distro = loadDistro(users.bob);
-		let stub = loadStub(users.stub);
+		let mc = getNewMinterContract(users.stub);
 
 		// 1. mock up a minters list
-		await stub.mock_minters({
+		await mc.mock_minters({
 			args: {minters: [users.alice.accountId, users.carol.accountId]}
 		});
 
@@ -560,12 +570,13 @@ describe("payment tests", ()=>{
 
 
 	test("stub contract works", async ()=>{
-		let users = loadTestUsers();
-		let stub = loadStub(users.stub);
+		if (config.minterContract != "stub") { 
+			console.log("not using stub");
+			return;
+		}
 
-		// Initialize the contract storage --
-		// only ecessary the first time it's called after deployment (deployStub() handles this)
-		// await stub.init({args: {} });
+		let users = loadTestUsers();
+		let stub = getNewMinterContract(users.stub);
 
 		// check the stub contract is loaded
 		good = await stub.be_good();
@@ -592,6 +603,67 @@ describe("payment tests", ()=>{
 
 });
 
+// Test against the list_minters() function of a live mintbase contract, instead of using our stub .
+describe("mintbase tests", ()=>{
+
+	beforeAll(async () => {
+		await connectToNear();
+	});
+
+	test("can get payees from mintbase contract", async()=>{
+		let users = loadTestUsers();
+		let balances = {
+			before: {},
+			after: {}
+		}
+
+		// let carol call it, since she's buying ...
+		let mc = getNewMinterContract(users.carol);
+
+		// 1) get the minters list and the balances before:
+		let minters = await mc.list_minters();
+		console.log("contract '" + mc.contractId + "' minters: " + minters);
+
+		for (let i=0; i<minters.length; i++) {
+			let m = minters[i];
+			users[m] = loadTestUser(m);
+			balances.before[m] = await totalBalance(users[m]);
+		};
+		balances.before.carol = await totalBalance(users.carol);
+
+		// 2) have carol send some money to the minters:
+		
+		let distro = loadDistro(users.carol);
+		net_payment = BigInt( await distro.pay_minters( { 
+			args: {
+				minter_contract: mc.contractId
+		}, 
+			gas: "300000000000000", // attached GAS (optional)
+			amount: n2y(1),				// attached near
+		}));
+
+		// 3) get balances after.
+		for (let i=0; i<minters.length; i++) {
+			let m = minters[i];
+			balances.after[m] = await totalBalance(users[m]);
+		};
+		balances.after.carol = await totalBalance(users.carol);
+		console.log(balances);
+
+		// 4) all kosher?
+		for (let i=0; i<minters.length; i++) {
+			let m = minters[i];
+			assert(balances.before[m] + net_payment == balances.after[m], m + " bad balance");
+		};
+		assert(balances.before.carol - (BigInt(minters.length) * net_payment) > balances.after.carol, "carol bad balance");
+
+		// 5. what did carol pay for gas?
+    let gascost =  balances.before.carol - (balances.after.carol + (BigInt(minters.length) * net_payment));
+    console.log("gas cost: " + gascost + " yocto = " + y2n(gascost) + " NEAR");
+
+	});
+
+});
 
 // This one takes a while ...
 
@@ -603,7 +675,9 @@ describe("stress tests", ()=>{
 	});
 
 	test("can pay 30 minters", async()=>{
-		// actually tests payments from 1 user to (n-1) users
+		// the real mintbase contracts don't support mock_minters() (obviously)
+		// so this test will fail there.
+		
 		let n = 31;
 		let users = await makeNUsers(n);
 		let balances = {before: {}, after: {}};
@@ -617,14 +691,15 @@ describe("stress tests", ()=>{
 		
 		// user0 is the payer
 		let distro = loadDistro(users.user0);
-		let stub = loadStub(users.stub);
+		let mc = getNewMinterContract(users.stub);
 
 		// users 1-(n-1) are the payees
 		let minters = [];
 		for(let count=1; count<n; count++) {
 			minters.push(fullAccountName("user" + count));
 		}
-		await stub.mock_minters({
+
+		await mc.mock_minters({
 			args: {minters: minters}
 		});
 
