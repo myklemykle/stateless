@@ -1,10 +1,34 @@
 #!node
+/****
+ *
+ * This is the sandbox test script for the Stateless distrotron contract
+ * It uses these environment variables:
+ *
+ * Mandatory:
+ * 	* NEAR_ENV -- "testnet", "sandbox" or "remotesandbox"
+ *
+ * Mandatory for testing with a remote sanbox:
+ * 	* NEAR_SANDBOX_NODE -- hostname or IP of remote sandbox, or leave blank for local
+ *
+ * Mandatory for testing on testnet:
+ *  * NEAR_TESTNET_ACCOUNT -- an account on testnet to run tests under
+ *  * NEAR_TESTNET_MINTER_ACCOUNT -- a contract that supports the listMinters() method.  
+ *  	Defaults to our stub contract, but can also be a mintbase contract.
+ *
+ * Optional:
+ * 	* NEAR_SANDBOX_PORT -- TCP port of near API on sandbox, or leave blank for default of 3030
+ *
+ * Alternately, you can edit any of these values manually in the getConfig() method.
+ *
+ * */
+
 const nearAPI = require("near-api-js");
 const BN = require("bn.js");
 const fs = require("fs").promises;
 const assert = require("assert").strict;
 const path = require("path");
 const { utils } = nearAPI;
+const homedir = require('os').homedir();
 
 let config;
 let masterAccount;
@@ -21,49 +45,103 @@ let testUsers = {
 	emily: ''
 };
 
-const LOTSAGAS = "300000000000000"; // the max that can be attached, actually.
+// this works with node v16:
+async function fileExists (path) {
+  try {
+    await fs.access(path)
+    return true
+  } catch {
+    return false
+  }
+}
 
-function getConfig(env = process.env.NEAR_ENV || "sandbox") {
+const LOTSAGAS = "300000000000000"; // ATM this is the max gas that can be attached to a transaction
+
+async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
+	// To test on testnet, we need the name of a testnet account.
+	let testnet_master = process.env.NEAR_TESTNET_ACCOUNT;
+	let config = {};
+	let keyPath = "";
+
   switch (env) {
-    case "testnet":
-      return {
+
+		case "testnet": // the live NEAR testnet
+
+			if (! testnet_master ) {
+				console.error("please set NEAR_TESTNET_ACCOUNT to run tests on testnet");
+				process.exit(1);
+			}
+
+			keyPath = homedir + "/.near-credentials/testnet/" + testnet_master + ".json";
+			if (! await fileExists(keyPath) ) {
+				console.error("can't find near credentials at '" + keyPath + "'");
+				console.error("(try logging in with near-cli)");
+				process.exit(2);
+			}
+
+      config = {
         networkId: "testnet",
 				nearnodeUrl: "http://rpc.testnet.near.org",
-        masterAccount: "mykletest.testnet",
+        masterAccount: testnet_master,
         contractAccount: "distro_test",
-				stubAccount: "stub",
-				keyPath: "/Volumes/External/mykle/.near-credentials/testnet/mykletest.testnet.json",
+				minterContract: process.env.NEAR_TESTNET_MINTER_ACCOUNT || "stub",
+				keyPath: keyPath
       };
-		case "sandbox": // remote sandbox
-      return {
+			break;
+
+
+		case "remotesandbox": // remote sandbox
+
+			// This key file must be copied from the remote sandbox after it launches:
+			keyPath = homedir + "/tmp/near-sandbox/validator_key.json";
+			if (! await fileExists(keyPath) ) {
+				console.error("can't find near credentials at '" + keyPath + "'");
+				process.exit(3);
+			}
+
+			let nearnodeUrl = "http://" + (process.env.NEAR_SANDBOX_NODE || "localhost") + ':' + (process.env.NEAR_SANDBOX_PORT || "3030");
+
+      config = {
         networkId: "sandbox",
         nearnodeUrl: "http://nearnode:3030",
         masterAccount: "test.near",
         contractAccount: "distro",
-				stubAccount: "stub",
-				keyPath: "/Volumes/External/mykle/tmp/near-sandbox/validator_key.json",
+				minterContract: "stub",
+				keyPath: keyPath
       };
-		case "local": // local sandbox
-      return {
+			break;
+
+
+		case "sandbox": // local sandbox
+      config = {
         networkId: "sandbox",
-        nearnodeUrl: "http://localhost:3030",
+        nearnodeUrl: "http://localhost:" + (process.env.NEAR_SANDBOX_PORT || "3030"),
         masterAccount: "test.near",
         contractAccount: "distro",
-        stubAccount: "stub",
+        minterContract: "stub",
         keyPath: "/tmp/near-sandbox/validator_key.json",
       };
+			break;
   }
+
+	console.debug(config);
+	return config;
 }
 
 function n2y(near) { return utils.format.parseNearAmount(near.toString()); }
 function y2n(yocto) { return utils.format.formatNearAmount(yocto); }
 
 function fullAccountName(prefix){
+	// if prefix already has dots in it, 
+	// assume it's fully-qualified already and return it unchanged
+	if (prefix.match(/\./)) 
+		return prefix;
+
 	return prefix + '.' + config.masterAccount;
 }
 
 async function connectToNear() {
-  config = getConfig();
+  config = await getConfig();
 	console.log("connecting to " + config.networkId);
 
   const keyFile = require(config.keyPath);
@@ -124,13 +202,13 @@ async function makeNUsers(count){
 	};
 	console.log("loaded " + count + " test users");
 
-	testUsers[config.stubAccount] = loadTestUser(config.stubAccount);
+	testUsers[config.minterContract] = loadTestUser(config.minterContract);
 	return testUsers;
 }
 
 function loadTestUsers(){ // also loads the stub account
 	userList = Object.keys(testUsers);
-	userList.push(config.stubAccount);
+	userList.push(config.minterContract);
 
 	userList.forEach(function(u){ 
 		// let accountId = fullAccountName(u);
@@ -153,7 +231,7 @@ async function loadNUsers(count){ // also loads the stub account
 	for (let n = 0; n<count; n++) { 
 		userList.push("user" + n);
 	}
-	userList.push(config.stubAccount);
+	userList.push(config.minterContract);
 
 	userList.forEach(async function(u){ 
 		let accountId = fullAccountName(u);
@@ -167,23 +245,23 @@ async function loadNUsers(count){ // also loads the stub account
 
 async function deployStub() {
 	const stubwasm = await fs.readFile(path.resolve(__dirname, "../../target/wasm32-unknown-unknown/release/stub.wasm"));
-	const _stubAccount = await createTestUser(config.stubAccount, 100);
-	await _stubAccount.deployContract(stubwasm);
+	const _minterContract = await createTestUser(config.minterContract, 100);
+	await _minterContract.deployContract(stubwasm);
 
   console.log("stub deployed");
 
-	const stubContract = loadStub(_stubAccount);
+	const stubContract = loadStub(_minterContract);
 	await stubContract.init({args:{}});
 
   console.log("stub initialized");
 
-	return _stubAccount;
+	return _minterContract;
 }
 
 function loadStub(acct) {
 	return new nearAPI.Contract(
 		acct, // will call it
-		fullAccountName(config.stubAccount), // name (string) of acct where contract is deployed
+		fullAccountName(config.minterContract), // name (string) of acct where contract is deployed
 		{changeMethods: ["init","mock_minters"], 
 			viewMethods: ["list_minters","be_good"]}
 	);
@@ -403,7 +481,7 @@ describe("payment tests", ()=>{
 		try { 
 			net_payment = BigInt( await distro.pay_minters( { 
 				args: {
-					minter_contract: fullAccountName(config.stubAccount)
+					minter_contract: fullAccountName(config.minterContract)
 			}, 
 				gas: "300000000000000", // attached GAS (optional)
 				amount: n2y(1),				// attached near
@@ -456,7 +534,7 @@ describe("payment tests", ()=>{
 		
 		net_payment = BigInt( await distro.pay_minters( { 
 			args: {
-				minter_contract: fullAccountName(config.stubAccount)
+				minter_contract: fullAccountName(config.minterContract)
 		}, 
 			gas: "300000000000000", // attached GAS (optional)
 			amount: n2y(1),				// attached near
@@ -554,7 +632,7 @@ describe("stress tests", ()=>{
 		
 		net_payment = BigInt( await distro.pay_minters( { 
 			args: {
-				minter_contract: fullAccountName(config.stubAccount)
+				minter_contract: fullAccountName(config.minterContract)
 			}, 
 			gas: "300000000000000", // attached GAS (optional)
 			amount: n2y(1),				// attached near

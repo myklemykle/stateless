@@ -92,6 +92,7 @@ sandboxtest_setup:
 
 ##
 # these other targets are useful while iterating during test-driven development:
+#
 # redeploy stub contract & user
 sandbox_deploy_stub: stub_release
 	cd tests/sandbox; npx jest -t "deploy stub"
@@ -103,5 +104,9 @@ sandbox_deploy_distro: release
 # recreate test users
 sandbox_make_users:
 	cd tests/sandbox; npx jest -t "make test users"
+
+# run payment tests against current state
+sandbox_payment:
+	cd tests/sandbox; npx jest -t "payment"
 
 
