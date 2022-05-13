@@ -28,8 +28,11 @@ The Makefile includes these targets:
 NOTE: The sandbox tests require the NEAR end-to-end sandbox test environment:
 https://docs.near.org/docs/develop/contracts/sandbox
 
-Or, you can run the same tests on testnet. 
-(Caution: it's slower, and if you run them too often you'll be temporarily throttled.)
+Because M1 Mac users can't yet build the sandbox locally,
+these sandbox tests can be cofigured to run in a remote sandbox.  
+Or, they can be run in the NEAR testnet. 
+(Caution: testing in NEAR testnet is slower, 
+and if you test too often you may be temporarily throttled.)
 
 The inline doc in tests/sandbox/sandbox.tests.js 
 has instructions how to configure the sandbox tests 
