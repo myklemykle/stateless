@@ -9,11 +9,11 @@ The Makefile includes these targets:
 
 * release
 * debug
-  -- build the distrotron contract
+  * build the distrotron contract
   
 * stub_release
 * stub_debug
-  -- build the stub contract
+  * build the stub contract
   
 * unittest -- build and unit-test the distrotron contract
 * stubtest -- build and unit-test the stub contract
@@ -30,6 +30,7 @@ https://docs.near.org/docs/develop/contracts/sandbox
 
 Because M1 Mac users can't yet build the sandbox locally,
 these sandbox tests can be cofigured to run in a remote sandbox.  
+
 Or, they can be run in the NEAR testnet. 
 (Caution: testing in NEAR testnet is slower, 
 and if you test too often you may be temporarily throttled.)
