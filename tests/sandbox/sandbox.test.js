@@ -119,7 +119,7 @@ async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
         masterAccount: "test.near",
         contractAccount: "distro",
         minterContract: "stub",
-        keyPath: "/tmp/near-sandbox/validator_key.json",
+        keyPath: process.env.HOME + "/tmp/near-sandbox/validator_key.json",
       };
 			break;
   }
@@ -309,6 +309,7 @@ describe("blockchain state setup (slow!)", ()=>{
 		if (config.minterContract == "stub") { 
 			await deployStub();
 			// mock up a minters list
+			let mc = getNewMinterContract(users.stub);
 			await mc.mock_minters({
 				args: {minters: [users.alice.accountId, users.carol.accountId]}
 			});
