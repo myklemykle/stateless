@@ -59,17 +59,17 @@ stubtest: stub_debug
 .PHONY: sandbox_start
 sandbox_start: 
 	echo "starting sandbox:"
-	# NOTE 1: start_sandbox.sh doesn't exist.  You must copy 
-	# either sandbox_start_local.sh 
-	# or sandbox_start_remote.sh 
-	# to sandbox_start.sh ,
-	# depending on your setup.
+# NOTE 1: start_sandbox.sh doesn't exist in the repo.  
+# You must copy either sandbox_start_local.sh 
+# or sandbox_start_remote.sh 
+# to sandbox_start.sh ,
+# depending on your setup.
 	cd tests/sandbox; ./start_sandbox.sh 
-	# NOTE 2: if using sandbox_start_remote.sh, you will need to copy over the master key 
-	# after starting the sandbox.  Use this scp command, changing user & host to real values:
-	#
-	# 		scp user@host:tmp/near-sandbox/validator_key.json ~/tmp/near-sandbox 
-	#
+# NOTE 2: if using sandbox_start_remote.sh, you will need to copy over the master key 
+# after starting the sandbox.  Use this scp command, changing user & host to real values:
+#
+# 		scp user@host:tmp/near-sandbox/validator_key.json ~/tmp/near-sandbox 
+#
 
 ##
 # * TODO: find/get sandbox master key
