@@ -29,9 +29,6 @@ Both of these methods return a NEAR `Balance` (currently a `BigInt`) of the net 
 `stub/`
   - A test contract that provides the same `list_minters()` API as does a Mintbase contract
 
-`tests/sim/`
-  - A few tests for the NEAR Simulator (deprecated & doesn't cover everything)
-
 `tests/sandbox/`
   - A comprehensive set of sandbox tests, which exercise the contract against a live blockchain.
 
@@ -54,25 +51,14 @@ The Makefile includes these test targets:
 * `unittest` -- build and unit-test the distrotron contract
 * `stubtest` -- build and unit-test the stub contract
 
-* `simtest` -- run the simulator tests
-
 * `sandbox_start` -- start the sandbox test environment
 * `sandboxtest` -- run most of the sandbox tests
 * `sandboxtest_all` -- run all of the sandbox tests
 * `mintbasetest` -- test the distro contract against Mintbase's contract, instead of against the stub.  (testnet only)
 
-NOTE: The sandbox tests run in a live blockchain instance, such as [the NEAR end-to-end sandbox test environment](https://docs.near.org/docs/develop/contracts/sandbox)
-
-Because M1 Mac users can't yet build the sandbox locally,
-these sandbox tests can be cofigured to run in a remote instance.  
-
-Or, they can be run in the NEAR testnet. 
-(Caution: testing in NEAR testnet is slower, 
-and if you test too often you may be temporarily throttled.)
-
-The inline doc in tests/sandbox/sandbox.tests.js 
-has instructions how to configure the sandbox tests 
-for a local sandbox, a remote sandbox or testnet.
+The sandbox tests require a live blockchain instance, such as [the NEAR end-to-end sandbox test environment](https://docs.near.org/docs/develop/contracts/sandbox)
+THey may also be run in the NEAR testnet.  However, testing in NEAR testnet is slower, and if you test too often you may be temporarily throttled.
+The inline doc in tests/sandbox/sandbox.tests.js has instructions how to configure the sandbox tests for a local sandbox, a remote sandbox or testnet.
 
 ## Warnings:
 
