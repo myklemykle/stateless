@@ -1,9 +1,4 @@
 //! This contract distributes incoming payments of NEAR tokens to a list of recipient accounts.
-//!
-//! Methods: 
-//!  Main money distro: pay_out
-//!  Distro list management: set_recipients, get_receipients, add_recipient, remove_recipient
-//!
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
@@ -14,134 +9,63 @@ near_sdk::setup_alloc!();
 
 #[near_bindgen]
 #[derive(Default, BorshDeserialize, BorshSerialize)]
+#[doc(hidden)]
 pub struct Distrotron {
+    // no blockchain data in this contract, just a NEAR balance.
 }
 
 // near_sdk::Balance is u128, so the JSON BigInt equiv is:
 pub type JsonBalance = U128; 
 
-const SOMEGAS: u64 = 10_000_000_000_000;
+const SOMEGAS: u64 = 10_000_000_000_000;  // == 10 Tgas, 10,000 Ggas
 const LIST_MINTERS_GAS: u64 = SOMEGAS;
 
-// the list_minters() API method on a Mintbase contract:
-#[ext_contract(ext_mc)]
+/// The list_minters() API method on a Mintbase contract returns a list of NEAR accounts
+/// who are authorized to mint with that contract instance.
+/// The contract owner can modify this list in the Mintbase interface.
+#[ext_contract(ext_mintbase_contract)]
+#[doc(hidden)]
 trait MinterContract {
     fn list_minters(&self) -> Vec<AccountId>;
 }
 
-#[ext_contract(ext_self)]
-trait MyContract {
-    fn list_minters_cb(&self) -> Promise;
-    fn pay_out(&self, payees: Vec<AccountId>) -> Promise;
-    fn report_payment(&self, amount: JsonBalance) -> JsonBalance ;
+/// Callback methods on this contract.
+#[ext_contract(callbacks)]
+trait MyCallbacks {
+    /// This is the callback target of the remote call to list_minters()
+    fn list_minters_cb(self) -> Promise;
+}
+
+/// Public methods on this contract for making payments.
+trait Payments {
+    fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise ;
+    fn pay_minters(&mut self, minter_contract: AccountId) -> Promise ;
+    fn list_minters_cb(&mut self) -> Promise ;
+    fn report_payment(&self, amount: JsonBalance) -> JsonBalance;
 }
 
 
 // our contract:
 #[near_bindgen]
-impl Distrotron {
-    /// Returns the amount of NEAR that was paid to each recipient, in Yocto
-    ///
+impl Payments for Distrotron {
+    /// Takes a list of NEAR account IDs.
+    /// Divides an attached payment of NEAR evenly between those accounts.
+    /// Returns a Promise that resolves to the number of YoctoNEAR paid to each recipient.
+    //  __pay_out is the real function, this is just the external wrapper.
     #[payable]
-    pub fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
+    fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
         self.__pay_out(payees)
     }
 
-    // abort if the payee list is in any way funny ...
-    fn test_payees(&mut self, payees: Vec<AccountId> ) -> bool {
-        // count the recipients.  
-        // u32 only goes to 4 billion, and there are 8+ billion people in the world ...
-        //let count: u64 = payees.len().try_into().unwrap(); 
-        let count: u128 = payees.len().try_into().unwrap();
-                
-        // Fail if none.
-        assert!(count > 0, "Empty recipient list");
-
-        // count the money & fail if none.
-        assert!(env::attached_deposit() > 0, "No payment attached");
-
-        // Other tests:
-        //
-        // We'd like to parse the recipients list & make sure they're not garbled,
-        // or else count on the transaction failing if it's not kosher.
-        // But apparently we can't even test if accounts exist for some NEAR reason:
-        // https://stackoverflow.com/questions/70819819/how-can-i-verify-if-a-near-address-is-valid-in-smart-contract/70820257#70820257
-        
-        // We could at least check that the IDs are valid format:
-        // https://docs.rs/near-sdk/latest/near_sdk/env/fn.is_valid_account_id.html
-        /*
-        for acct_id in payees.clone().into_iter() {
-            assert!( env::is_valid_account_id(acct_id.as_bytes()) ) ;
-        }
-        */
-        // ... but what's the point if it can still fail?
-        
-        true
-    }
-
-    // Pay out the complete attached sum to the payees, no matter the gas.
-    fn __pay_out(&mut self, mut payees: Vec<AccountId> ) -> Promise {
-        self.test_payees(payees.clone());
-
-        // sort and de-dup
-        payees.sort();
-        payees.dedup();
-
-        let total_payment: Balance = env::attached_deposit();
-        let count: u128 = payees.len().try_into().unwrap();
-
-        // Divide the yocto by the number of payees to get the individual payouts
-        // NOTE: this is integer division;
-        // the remainder, some integer yocto less than count, will be abandoned in this contract account.
-        //
-        // At time of writing, that sum is so much vastly less than one cent that i'm losing money just by thinking about it.
-        //
-        // But it occurs to me that this sort of leftover must exist everywhere in the universe of
-        // traditional banking and blockchain.  One assumes, or hopes, that any sort of abuse or bug will be detected
-        // by audits.
-        
-        let slice = total_payment / count; 
-
-        let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
-                                                                        json!({
-                                                                            "amount": U128(slice)
-                                                                        }).to_string().into_bytes(),
-                                                                        0, // no payment 
-                                                                        SOMEGAS
-                                                                        );
-        
-        let payment_promise = self.pay_each(payees.clone(), slice);                                     // all of it
-        payment_promise.then(finish)
-    }
-
-    fn pay_each(&self, payees: Vec<AccountId>, sum: Balance) -> Promise {
-        // pay each payee in a loop
-        let promises: Vec<Promise> = payees.into_iter().map(|p| {
-            Promise::new(p.to_string()).transfer(sum)
-        } ).collect();
-        
-        // boil all those promises down into a super-promise
-        let mut big_p = promises[0].clone();
-        for pi in 1..promises.len() {
-            //big_p = big_p.and(promises[pi].clone());
-            big_p = big_p.then(promises[pi].clone());
-        }
-
-        big_p
-    }
-
-    pub fn report_payment(&self, amount: JsonBalance) -> JsonBalance { 
-        // Return the count of how much each payee received:
-        amount
-    }
-
-    // Given a contract ID, get the list of minters from that contract's list_minters() method,
-    // then distribute the attached funds to that list of minters via pay_out().
+    /// Takes a Mintbase contract ID. 
+    /// Fetches the list of NEAR accounts from that contract's list_minters() method,
+    /// then delegates to pay_out() to distribute the attached funds to those accounts.
+    /// Returns a Promise that resolves to the number of YoctoNEAR paid to each recipient.
     #[payable]
-    pub fn pay_minters(&mut self, minter_contract: AccountId) -> Promise {
+    fn pay_minters(&mut self, minter_contract: AccountId) -> Promise {
         assert!( env::is_valid_account_id(minter_contract.as_bytes()), "Invalid contract ID" ) ;
-        ext_mc::list_minters(&minter_contract, 0, LIST_MINTERS_GAS)
-            .then(ext_self::list_minters_cb(&env::current_account_id(), 
+        ext_mintbase_contract::list_minters(&minter_contract, 0, LIST_MINTERS_GAS)
+            .then(callbacks::list_minters_cb(&env::current_account_id(), 
                     env::attached_deposit(), 
                     ////////////////////////////////
                     // complicated gas accounting:
@@ -160,15 +84,13 @@ impl Distrotron {
                   ))
     }
 
+    /// Callback method.
+    /// Takes a list of minters from a cross-contract call to list_minters()
+    /// Performs safety checks, and begins the payment.
     #[payable]
-    pub fn list_minters_cb(&mut self) -> Promise {
+    fn list_minters_cb(&mut self) -> Promise {
         // pattern from https://docs.near.org/docs/tutorials/contracts/xcc-rust-cheatsheet :
         assert_eq!(env::promise_results_count(), 1, "This is a callback method");
-
-        // what else can I secure here?  can I check that the caller is the signer?  does that help?
-        // can i make sure the caller is the contract owner? does that help?
-
-
 
         match env::promise_result(0) {
             PromiseResult::NotReady => unreachable!(),
@@ -184,12 +106,106 @@ impl Distrotron {
         }
     }
 
+    #[doc(hidden)]
+    /// When all payments are complete, this function returns the number of YoctoNear paid to each payee.
+    // Really it just echoes back the JsonBalance passed to it.
+    // It must be public so that it can be the target of a function_call(), but is not externally useful.
+    fn report_payment(&self, amount: JsonBalance) -> JsonBalance { 
+        // Return the count of how much each payee received:
+        amount
+    }
 
+}
 
-    pub fn be_good(&self) -> bool {
+impl Distrotron {
+
+    /// abort if the payment or payee list are invalid
+    fn test_payees(&mut self, payees: Vec<AccountId> ) -> bool {
+        // count the recipients.  
+        // u32 only goes to 4 billion, and there are 8+ billion people in the world ...
+        let count: u128 = payees.len().try_into().unwrap();
+                
+        // Fail if none.
+        assert!(count > 0, "Empty recipient list");
+
+        // count the money & fail if none.
+        assert!(env::attached_deposit() > 0, "No payment attached");
+
+        // Other tests:
+        //
+        // We'd like to parse the recipients list & make sure they're not garbled,
+        // or else count on the transaction failing if it's not kosher.
+        // But apparently we can't test if accounts exist for some NEAR reason:
+        // https://stackoverflow.com/questions/70819819/how-can-i-verify-if-a-near-address-is-valid-in-smart-contract/70820257#70820257
+        
+        // We could at least check that the IDs are valid format:
+        // https://docs.rs/near-sdk/latest/near_sdk/env/fn.is_valid_account_id.html
+        /*
+        for acct_id in payees.clone().into_iter() {
+            assert!( env::is_valid_account_id(acct_id.as_bytes()) ) ;
+        }
+        */
+        // ... but what's the point if it can still fail?
+        
         true
     }
-    
+
+    /// Pay out the complete attached sum to the payees, no matter the gas.
+    fn __pay_out(&mut self, mut payees: Vec<AccountId> ) -> Promise {
+        self.test_payees(payees.clone());
+
+        // sort and de-dup
+        payees.sort();
+        payees.dedup();
+
+        let total_payment: Balance = env::attached_deposit();
+        let count: u128 = payees.len().try_into().unwrap();
+
+        // Divide the yocto by the number of payees to get the individual payouts
+        //
+        // NOTE: this is integer division;
+        // the remainder, some integer yocto less than count, will be abandoned in this contract account.
+        //
+        // At time of writing, that sum is so much vastly less than one cent that I'm losing money just by thinking about it.
+        //
+        // But it occurs to me that this sort of leftover must exist everywhere in the universe of
+        // traditional banking and blockchain.  One assumes, or hopes, that any sort of abuse or bug will be detected
+        // by audits.
+        
+        // TODO: we could return it .... though i think that costs more in gas than you'd get back.
+        
+        let slice = total_payment / count; 
+
+        let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
+                                                                        json!({
+                                                                            "amount": U128(slice)
+                                                                        }).to_string().into_bytes(),
+                                                                        0, // no payment 
+                                                                        SOMEGAS
+                                                                        );
+        
+        let payment_promise = self.pay_each(payees.clone(), slice);                                     // all of it
+        payment_promise.then(finish)
+    }
+
+    /// Initiate transfers to the payees, and return a single Promise that
+    /// resolves once all of the transfers have completed or failed.
+    fn pay_each(&self, payees: Vec<AccountId>, sum: Balance) -> Promise {
+        // pay each payee in a loop
+        let promises: Vec<Promise> = payees.into_iter().map(|p| {
+            Promise::new(p.to_string()).transfer(sum)
+        } ).collect();
+        
+        // boil all those promises down into a super-promise
+        let mut big_p = promises[0].clone();
+        for pi in 1..promises.len() {
+            //big_p = big_p.and(promises[pi].clone());   // execute in parallel
+            big_p = big_p.then(promises[pi].clone());   // execute one at a time
+        }
+
+        big_p
+    }
+
 }
 
 
@@ -240,15 +256,6 @@ mod unit_tests {
         "eve.testnet".to_string()
     }
 
-    // fn frank() -> AccountId {
-    //     "frank.testnet".to_string()
-    // }
-    //
-    // fn grace() -> AccountId {
-    //     "grace.testnet".to_string()
-    // }
-
-
     #[test]
     // pay_out should fail with no list of recipients:
     #[should_panic(
@@ -278,25 +285,6 @@ mod unit_tests {
         let _cut = contract.pay_out(chumps);
     }
 
-    //#[test]
-    // // pay_out should succeed with multiple recipients
-    // fn pay_out_4() { 
-    //     let c = get_context(vec![], false);
-    //     c.attached_deposit = to_ynear(10);
-    //     testing_env!(c);
-    //     let mut contract = Distrotron {};
-    //
-    //     let chumps = vec![bob(), carol(), dick(), eve()];
-    //
-    //     // how much money does bob have before the call?  probably not much?
-    //     let before = chumps[0].account().unwrap().amount;
-    //     let cut = contract.pay_out(chumps);
-    //     let after = chumps[0].account().unwrap().amount;
-    //     assert_eq!(after - before, cut, "bob was ripped off!");
-    // }
-
-    // more functional tests are performed in the Simulator & Sandbox.
-
     // pay_minters() should fail if argument is invalid
     #[test]
     #[should_panic(
@@ -309,35 +297,8 @@ mod unit_tests {
         let mut contract = Distrotron {};
         contract.pay_minters("i".to_string()); // invalid; minimum length is 2
     }
-    // // should fail if list_minters fails on the target contact
-    // #[test]
-    // #[should_panic(
-    //     expected = r#"minter contract failure"#
-    // )]
-    // fn pay_minters_2() {
-    //     let c = get_context(vec![], false);
-    //     c.attached_deposit = to_ynear(10);
-    //     testing_env!(c);
-    //     let mut contract = Distrotron {};
-    // }
-    // // should fail if list_minters returns no minters
-    // #[test]
-    // #[should_panic(
-    //     expected = r#"no minters found"#
-    // )]
-    // fn pay_minters_3() {
-    //     let c = get_context(vec![], false);
-    //     c.attached_deposit = to_ynear(10);
-    //     testing_env!(c);
-    //     let mut contract = Distrotron {};
-    // }
-    // // should punt to pay_out otherwise.
-    // #[test]
-    // fn pay_minters_4() {
-    //     let c = get_context(vec![], false);
-    //     c.attached_deposit = to_ynear(10);
-    //     testing_env!(c);
-    //     let mut contract = Distrotron {};
-    // }
+
+    // No unit tests are provided here for the methods that return Promises to external contract calls;
+    // run sandbox tests for coverage of those.
 
 }

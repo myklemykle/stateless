@@ -1,9 +1,5 @@
-//! This contract is a test stub for the distro contract's cross-contract call;
+//! This contract is a test stub for the Distrotron contract's one cross-contract call;
 //! it stubs the list_minters() method that we expect to see on Mintbase contracts.
-//!
-//! Methods: 
-//!  list_minters
-//!
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
@@ -30,45 +26,42 @@ impl Default for Stub {
     }
 }
 
-// our contract:
 #[near_bindgen]
 impl Stub {
 
-    // Right after this contract is deployed, we need to initialize storage 
-    // by calling either self.mock_minters() or this no-op init() method,
-    // which triggers a call to self.default().
-    // Otherwise, any view method call will trigger that default() method,
-    // leading to an "illegal storage_write() in view method" failure.
+    /// Stub contract initiaization.
+    /// Right after this contract is deployed, we must initialize storage 
+    /// by calling either self.mock_minters() or this no-op init() method,
+    /// which calls self.default().
+    /// Otherwise, the first call to list_minters() will trigger the default() method,
+    /// leading to an "illegal storage_write() in view method" failure.
     pub fn init (&mut self) -> bool {
         true
     }
 
+    /// Mock the list of minters that our mock list_minters() method will return.
+    /// Takes a list of NEAR account IDs.
+    /// No return value; it just succeeds or throws an error.
     pub fn mock_minters(&mut self, minters: Vec<AccountId>) {
         self.minters.clear();
         self.minters.extend(minters);
     }
 
+    /// Simulation of the list_minters() method from the Mintbase standard contract.
+    /// Returns a list of NEAR Account IDs.
     pub fn list_minters(&self) -> Vec<AccountId> {
         self.minters.to_vec()
     }
 
-    pub fn be_good(&self) -> bool {
-        true
-    }
-    
 }
 
 
-// use the attribute below for unit tests
 #[cfg(test)]
 mod stub_tests {
     use super::*;
     use near_sdk::MockedBlockchain;
     use near_sdk::{testing_env, VMContext};
 
-    // part of writing unit tests is setting up a mock context
-    // in this example, this is only needed for env::log in the contract
-    // this is also a useful list to peek at when wondering what's available in env::*
     fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
         VMContext {
             current_account_id: "alice.testnet".to_string(),
@@ -93,31 +86,6 @@ mod stub_tests {
     fn to_ynear(near: Balance) -> Balance {
         near * 10u128.pow(24)
     }
-
-    // fn bob() -> AccountId {
-    //     "bob.testnet".to_string()
-    // }
-    //
-    // fn carol() -> AccountId {
-    //     "carol.testnet".to_string()
-    // }
-    //
-    // fn dick() -> AccountId {
-    //     "dick.testnet".to_string()
-    // }
-    //
-    // fn eve() -> AccountId {
-    //     "eve.testnet".to_string()
-    // }
-    //
-    // fn frank() -> AccountId {
-    //     "frank.testnet".to_string()
-    // }
-    //
-    // fn grace() -> AccountId {
-    //     "grace.testnet".to_string()
-    // }
-
 
     #[test]
     fn list_minters_1() { 
