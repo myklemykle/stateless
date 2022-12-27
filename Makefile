@@ -29,11 +29,6 @@ stub_release: target/wasm32-unknown-unknown/release/stub.wasm
 unittest: release debug 
 	cd distrotron; make test
 
-# # run simulator tests
-# # note: as of 5/1/2022 simulator tests still can't be compiled on a M1 mac
-# simtest: release $(wildcard tests/sim/*.rs)
-# 	cargo test first_tests -- --nocapture
-
 # run the unit tests of the stub contract:
 stubtest: stub_debug
 	cargo test -p stub -- --nocapture
@@ -42,9 +37,9 @@ stubtest: stub_debug
 # sandbox tests -- testing in a live toy NEAR instance -- requires several steps.
 #
 
+# test scripts will need to find the validator key for the sandbox 
 NEARD_HOME := $${HOME}/.near
 NEARD_KEY := ${NEARD_HOME}/validator_key.json
-NEARCORE := ./nearcore
 
 #########
 #
@@ -53,12 +48,11 @@ NEARCORE := ./nearcore
 #
 #
 
-LOCAL_NEARD_HOME := ${NEARD_HOME}
+NEARCORE := ./nearcore
 
 # neard will run in the local terminal until stopped:
 local_sandbox_start: local_sandbox local_sandbox_init
 	cd ${NEARCORE}; cargo run --profile quick-release -p neard -- --home ${NEARD_HOME} run
-
 
 local_sandbox: local_sandbox_repo ${NEARCORE}/target/quick-release/neard
 
@@ -73,11 +67,13 @@ ${NEARCORE}/target/quick-release/neard:
 
 local_sandbox_init: local_sandbox
 	mkdir ${NEARD_HOME}; \
-	cd ${NEARCORE}; cargo run --profile quick-release -p neard -- --home ${LOCAL_NEARD_HOME} init
+	cd ${NEARCORE}; cargo run --profile quick-release -p neard -- --home ${NEARD_HOME} init
 
 ############
 #
 # These targets can fetch, launch, configure and run a Docker image for sandbox tests.
+# The image, nearprotocol/nearcore, is published by NEAR devs, and is compiled with
+# AVX extensions that will not work on an M1 macintosh.
 #
 docker_sandbox_start: 
 	docker start distrotron_docker_sandbox || \
@@ -89,29 +85,26 @@ docker_sandbox_stop:
 	docker kill distrotron_docker_sandbox
 	docker rm distrotron_docker_sandbox
 
-
-# ~/tmp/near-sandbox: $TARGETS/sandbox_started 
-#
-## for a remote instance
-## (for local instance, tests can just find that file ...
-#
-#
-#
 #############
 #
 # These targets perform sandbox tests.
-# They can run in localnet or testnet.
+# They can be run in a localnet (on the local host, a remote host or in a Docker container)
+# or even in the NEAR public testnet.
+#
+# TODO: document $NEARD_HOME and $NEARD_KEY,
+# plus all environment variables the tests can use (NEAR_ENV & etc.)
 #
 ##
-# * set up state, then run all payment tests. This is the default.
+# Default test: deploy contracts, create test users, run all payment tests.
 sandboxtest: 
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
-		npx jest -t setup; npx jest -t payment
+		npx jest -t setup; \
+		npx jest -t payment
 #
 ##
-# * setup state and run all tests, including a stress test that can take several minutes to finish.
+# Set up state and run all tests, including a stress test that can take several minutes to finish.
 sandboxtest_all: 
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
@@ -139,33 +132,36 @@ mintbasetest:
 
 
 ##
-# these other targets are useful while iterating during test-driven development:
+# These other targets have been useful during development:
 #
-# redeploy stub contract & user
+# redeploy only the stub contract & user
 sandbox_deploy_stub: stub_release
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
 		npx jest -t "deploy stub"
 
-# redeploy main contract & user
+# redeploy only the main distro contract & user
 sandbox_deploy_distro: release
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
 		npx jest -t "deploy distro"
 
-# recreate test users
+# recreate all of the test users, with their initial balances
 sandbox_make_users:
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
 		npx jest -t "make test users"
 
-# run payment tests against current state.
-# (The nature of the sandbox payment tests is that the test users will eventually run out of money;
-# recreating the users is faster, in the long run, than rebalancing all of their accounts after every test.
-# However you can run sandbox_payment at least 3 times before you have to recreate them.
+# Run all the payment tests against the current contract state.
+# 
+# These payment tests shift balances of NEAR between users, 
+# and will eventually cause some test users to be bankrupt,
+# which is why the main test target re-initialzes users before running them.
+#
+# However you can run sandbox_payment at least 3 times before this is a problem.
 # This has been a time-saver during iterative development & testing.
 sandbox_payment:
 	cd tests/sandbox; \
