@@ -1,0 +1,30 @@
+{
+  "name": "stateless",
+  "version": "0.2.0",
+  "description": "NEAR contract to distribute funds evenly between accounts",
+  "main": "(none)",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/myklemykle/stateless.git"
+  },
+  "keywords": [
+    "npm",
+    "dependencies"
+  ],
+  "author": "mykle hansen",
+  "license": "Unlicense",
+  "bugs": {
+    "url": "https://github.com/myklemykle/stateless/issues"
+  },
+  "homepage": "https://github.com/myklemykle/stateless#readme",
+  "dependencies": {
+    "jest": "^29.3.1",
+    "near-api-js": "^1.1.0"
+  }
+}
