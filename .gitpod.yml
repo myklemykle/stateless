@@ -1,0 +1,7 @@
+# https://www.gitpod.io/docs/config-gitpod-file
+
+tasks:
+  - init: rustup target add wasm32-unknown-unknown 
+  - command: make unittest && make stubtest && make docker_sandbox_start && make sandboxtest
+
+
