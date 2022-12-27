@@ -35,7 +35,7 @@ unittest: release debug
 # 	cargo test first_tests -- --nocapture
 
 # run the unit tests of the stub contract:
-stubtest: stub_debug
+stubtest: stub_release stub_debug
 	cargo test -p stub -- --nocapture
 
 #####
@@ -43,7 +43,8 @@ stubtest: stub_debug
 #
 
 NEARD_HOME := $${HOME}/.near
-NEARD_KEY := ${NEARD_HOME}/validator_key.json
+NEARD_KEY_NAME := validator_key.json
+NEARD_KEY := ${NEARD_HOME}/${NEARD_KEY_NAME}
 NEARCORE := ./nearcore
 
 #########
@@ -82,11 +83,11 @@ local_sandbox_init: local_sandbox
 docker_sandbox_start: 
 	docker start distrotron_docker_sandbox || \
 		mkdir ${NEARD_HOME}; \
-		docker run -v ${NEARD_HOME}:/root/.near -p 3030:3030 --name distrotron_docker_sandbox nearprotocol/nearcore:latest \
-		 /bin/bash -c "neard init; neard run"
+		docker run -v ${NEARD_HOME}:/root/.near -p 3030:3030 --name distrotron_docker_sandbox -d nearprotocol/nearcore:latest \
+		 /bin/bash -c "neard init; chmod 644 /root/.near/${NEARD_KEY_NAME}; neard run"
 
 docker_sandbox_stop: 
-	docker kill distrotron_docker_sandbox
+	docker stop distrotron_docker_sandbox || docker kill distrotron_docker_sandbox; \
 	docker rm distrotron_docker_sandbox
 
 
