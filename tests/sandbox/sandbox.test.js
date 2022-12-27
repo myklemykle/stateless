@@ -13,7 +13,7 @@
  * Mandatory for testing on testnet:
  *  * NEAR_TESTNET_ACCOUNT -- an account on testnet to run tests under
  *  * NEAR_TESTNET_MINTER_ACCOUNT -- a contract that supports the listMinters() method.  
- *  	Defaults to our stub contract, but can also be a mintbase contract.
+ *  	Defaults to our stub contract, but may also be a real mintbase contract.
  *
  * Optional:
  * 	* NEAR_SANDBOX_PORT -- TCP port of near API on sandbox, or leave blank for default of 3030
@@ -89,37 +89,21 @@ async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
       };
 			break;
 
-
-		case "remotesandbox": // remote sandbox
-
-			// This key file must be copied from the remote sandbox after it launches:
-			keyPath = homedir + "/tmp/near-sandbox/validator_key.json";
+		case "sandbox": // local or remote sandbox
+			neard_home = process.env.NEARD_HOME || homedir + "/.near";
+			keyPath = process.env.NEARD_KEY || process.env.NEARD_HOME + "/validator_key.json";
 			if (! await fileExists(keyPath) ) {
-				console.error("can't find near credentials at '" + keyPath + "'");
+				console.error("can't find NEAR credentials at '" + keyPath + "'");
 				process.exit(3);
 			}
 
-			let nearnodeUrl = "http://" + (process.env.NEAR_SANDBOX_NODE || "localhost") + ':' + (process.env.NEAR_SANDBOX_PORT || "3030");
-
       config = {
         networkId: "sandbox",
-        nearnodeUrl: "http://nearnode:3030",
-        masterAccount: "test.near",
-        contractAccount: "distro",
-				minterContract: "stub",
-				keyPath: keyPath
-      };
-			break;
-
-
-		case "sandbox": // local sandbox
-      config = {
-        networkId: "sandbox",
-        nearnodeUrl: "http://localhost:" + (process.env.NEAR_SANDBOX_PORT || "3030"),
+				nearnodeUrl: "http://" + (process.env.NEAR_SANDBOX_NODE || "localhost") + ':' + (process.env.NEAR_SANDBOX_PORT || "3030"),
         masterAccount: "test.near",
         contractAccount: "distro",
         minterContract: "stub",
-        keyPath: process.env.HOME + "/tmp/near-sandbox/validator_key.json",
+				keyPath: keyPath
       };
 			break;
   }
@@ -262,7 +246,7 @@ function getNewMinterContract(acct) {
 		acct, // will call it
 		fullAccountName(config.minterContract), // name (string) of acct where contract is deployed
 		{changeMethods: ["init","mock_minters"], 
-			viewMethods: ["list_minters","be_good"]}
+			viewMethods: ["list_minters"]}
 	);
 }
 
@@ -289,7 +273,7 @@ async function totalBalance(acct){
 }
 
 
-jest.setTimeout(300000);
+jest.setTimeout(600000);
 describe("blockchain state setup (slow!)", ()=>{
 
 	beforeAll(async () => {
@@ -494,7 +478,7 @@ describe("payment tests", ()=>{
 				args: {
 					minter_contract: fullAccountName(config.minterContract)
 			}, 
-				gas: "300000000000000", // attached GAS (optional)
+				gas: LOTSAGAS, // attached GAS (optional)
 				amount: n2y(1),				// attached near
 			}));
 
@@ -547,7 +531,7 @@ describe("payment tests", ()=>{
 			args: {
 				minter_contract: fullAccountName(config.minterContract)
 		}, 
-			gas: "300000000000000", // attached GAS (optional)
+			gas: LOTSAGAS, // attached GAS (optional)
 			amount: n2y(1),				// attached near
 		}));
 
@@ -579,9 +563,6 @@ describe("payment tests", ()=>{
 		let users = loadTestUsers();
 		let stub = getNewMinterContract(users.stub);
 
-		// check the stub contract is loaded
-		good = await stub.be_good();
-
 		// call the list_minters method on the stub contract,
 		// which could be any old leftover from some other test ...
 		minters = await stub.list_minters();
@@ -591,7 +572,7 @@ describe("payment tests", ()=>{
 			args: {
 				minters: ["alice.boop","bruce.beep"]
 			},
-			gas: "300000000000000", // attached GAS (optional)
+			gas: LOTSAGAS, // attached GAS (optional)
 		});
 
 		// confirm it worked:
@@ -639,7 +620,7 @@ describe("mintbase tests", ()=>{
 			args: {
 				minter_contract: mc.contractId
 		}, 
-			gas: "300000000000000", // attached GAS (optional)
+			gas: LOTSAGAS, // attached GAS (optional)
 			amount: n2y(1),				// attached near
 		}));
 
@@ -672,14 +653,14 @@ describe("stress tests", ()=>{
 
 	beforeAll(async () => {
 		await connectToNear();
-		jest.setTimeout(300000);
+		jest.setTimeout(600000);
 	});
 
-	test("can pay 30 minters", async()=>{
+	test("can pay 87 minters", async()=>{
 		// the real mintbase contracts don't support mock_minters() (obviously)
 		// so this test will fail there.
 		
-		let n = 31;
+		let n = 87;
 		let users = await makeNUsers(n);
 		let balances = {before: {}, after: {}};
 
@@ -710,7 +691,7 @@ describe("stress tests", ()=>{
 			args: {
 				minter_contract: fullAccountName(config.minterContract)
 			}, 
-			gas: "300000000000000", // attached GAS (optional)
+			gas: LOTSAGAS, // attached GAS (optional)
 			amount: n2y(1),				// attached near
 		}));
 
