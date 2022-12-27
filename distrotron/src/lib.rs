@@ -17,9 +17,27 @@ pub struct Distrotron {
 // near_sdk::Balance is u128, so the JSON BigInt equiv is:
 pub type JsonBalance = U128; 
 
-const SOMEGAS: u64 = 10_000_000_000_000;  // == 10 Tgas, 10,000 Ggas
-const LIST_MINTERS_GAS: u64 = SOMEGAS;
+const GGAS: u64 = 1_000_000_000;    
+const TGAS: u64 = 1000 * GGAS;
 
+// Here are some generous gas estimates, for when you're working on modifications that might increase gas consumption:
+// const TXFEE_GAS: u64 = 2 * TGAS; 
+// const LIST_MINTERS_GAS: u64 = 10 * TGAS; 
+// const PAY_MINTERS_GAS: u64  = 50 * TGAS;
+// const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
+//
+// These are actual gas costs measured from real transactions, 
+// but specific to the version of this contract where I made the measurements.
+// (The NEAR Explorer shows the gas cost of each part of the transaction.)
+// If you modify the contract, please re-check the Explorer and update these if necessary..
+const TXFEE_GAS: u64            = 2 * TGAS; 
+// LIST_MINTERS_GAS is dependent on Mintbase's contract &  could change at any time.
+// Also in our stub contract it seems to cost more as the number of minters goes up.
+// But this seems a safe margin:
+const LIST_MINTERS_GAS: u64     = 10 * TGAS; 
+const PAY_MINTERS_GAS: u64      = 8 * TGAS; 
+const REPORT_PAYMENT_GAS: u64   = 3 * TGAS;
+                                          
 /// The list_minters() API method on a Mintbase contract returns a list of NEAR accounts
 /// who are authorized to mint with that contract instance.
 /// The contract owner can modify this list in the Mintbase interface.
@@ -77,8 +95,10 @@ impl Payments for Distrotron {
                     env::used_gas() 
                     // plus what we just attached to the other promise above,
                      + LIST_MINTERS_GAS
-                    // plus a wee bit more, just so this last command itself can excecute
-                     + (5 * SOMEGAS )
+                    // plus the gas for this method
+                     + PAY_MINTERS_GAS
+                     // and the overhead gas cost of the entire transaction
+                     + TXFEE_GAS
                     ) 
                     ////////////////////////////////
                   ))
@@ -181,7 +201,7 @@ impl Distrotron {
                                                                             "amount": U128(slice)
                                                                         }).to_string().into_bytes(),
                                                                         0, // no payment 
-                                                                        SOMEGAS
+                                                                        REPORT_PAYMENT_GAS
                                                                         );
         
         let payment_promise = self.pay_each(payees.clone(), slice);                                     // all of it
