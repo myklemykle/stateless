@@ -2,6 +2,7 @@
 
 tasks:
   - name: run NEAR sandbox
+    init: docker pull nearprotocol/nearcore:latest
     command: make docker_sandbox_start
 
   - name: build contracts
