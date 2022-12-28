@@ -89,7 +89,8 @@ async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
       };
 			break;
 
-		case "sandbox": // local or remote sandbox
+		case "sandbox": // local or remote standalone NEAR daemon
+		case "localnet": 
 			neard_home = process.env.NEARD_HOME || homedir + "/.near";
 			keyPath = process.env.NEARD_KEY || process.env.NEARD_HOME + "/validator_key.json";
 			if (! await fileExists(keyPath) ) {
@@ -98,7 +99,7 @@ async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
 			}
 
       config = {
-        networkId: "sandbox",
+        networkId: "localnet",
 				nearnodeUrl: "http://" + (process.env.NEAR_SANDBOX_NODE || "localhost") + ':' + (process.env.NEAR_SANDBOX_PORT || "3030"),
         masterAccount: "test.near",
         contractAccount: "distro",
@@ -106,6 +107,10 @@ async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
 				keyPath: keyPath
       };
 			break;
+
+		default: 
+			console.error("please set the NEAR_ENV environment variable to 'sandbox' or 'testnet'");
+			process.exit(4);
   }
 
 	console.debug(config);
@@ -129,16 +134,17 @@ async function connectToNear() {
 	console.log("connecting to " + config.networkId);
 
   const keyFile = require(config.keyPath);
-  masterKey = nearAPI.utils.KeyPair.fromString(
+  masterKey = nearAPI.KeyPair.fromString(
     keyFile.secret_key || keyFile.private_key
   );
   pubKey = masterKey.getPublicKey();
   keyStore = new nearAPI.keyStores.InMemoryKeyStore();
   keyStore.setKey(config.networkId, config.masterAccount, masterKey);
   near = await nearAPI.connect({
-    deps: {
-      keyStore,
-    },
+		// deps: {   /// used to work, deprecated pattern i guess...
+    //   keyStore,
+    // },
+		keyStore: keyStore,
     networkId: config.networkId,
     nodeUrl: config.nearnodeUrl,
   });
