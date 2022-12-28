@@ -76,15 +76,27 @@ local_sandbox_init: local_sandbox
 # The image, nearprotocol/nearcore, is published by NEAR devs, and is compiled with
 # AVX extensions that will not work on an M1 macintosh.
 #
+# run neard in the foreground, printing status lines, not returning from execution.
+# (neard will block all quit/stop/kill signals; to stop it, run "make docker_sandbox_stop" in a different window.)
+#
 docker_sandbox_start: 
 	docker start distrotron_docker_sandbox || \
 		mkdir ${NEARD_HOME}; \
-		docker run -v ${NEARD_HOME}:/root/.near -p 3030:3030 --name distrotron_docker_sandbox -d nearprotocol/nearcore:latest \
+		docker run -v ${NEARD_HOME}:/root/.near -p 3030:3030 --name distrotron_docker_sandbox nearprotocol/nearcore:latest \
 		 /bin/bash -c "neard init; chmod 644 /root/.near/${NEARD_KEY_NAME}; neard run"
 
+# run neard in the background & return from execution
+docker_sandbox_start_bg:
+	docker start distrotron_docker_sandbox || \
+		mkdir ${NEARD_HOME}; \
+		docker run -v ${NEARD_HOME}:/root/.near -d -p 3030:3030 --name distrotron_docker_sandbox nearprotocol/nearcore:latest \
+		 /bin/bash -c "neard init; chmod 644 /root/.near/${NEARD_KEY_NAME}; neard run"
+
+# kill off neard & clean up docker container
 docker_sandbox_stop: 
 	docker stop distrotron_docker_sandbox || docker kill distrotron_docker_sandbox; \
 	docker rm distrotron_docker_sandbox
+
 
 #############
 #
@@ -101,6 +113,7 @@ sandboxtest:
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest -t setup; \
 		npx jest -t payment
 #
@@ -110,6 +123,7 @@ sandboxtest_all:
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest 
 #
 ##
@@ -119,6 +133,7 @@ sandboxtest_setup:
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest -t setup
 #
 ###
@@ -128,6 +143,7 @@ mintbasetest:
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest -t setup; \
 		npx jest -t mintbase
 
@@ -140,6 +156,7 @@ sandbox_deploy_stub: stub_release
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest -t "deploy stub"
 
 # redeploy only the main distro contract & user
@@ -147,6 +164,7 @@ sandbox_deploy_distro: release
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest -t "deploy distro"
 
 # recreate all of the test users, with their initial balances
@@ -154,6 +172,7 @@ sandbox_make_users:
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest -t "make test users"
 
 # Run all the payment tests against the current contract state.
@@ -168,6 +187,7 @@ sandbox_payment:
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
 		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
 		npx jest -t "payment"
 
 
