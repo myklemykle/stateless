@@ -1,7 +1,12 @@
 # https://www.gitpod.io/docs/config-gitpod-file
 
 tasks:
-  - init: rustup target add wasm32-unknown-unknown 
-  - command: make unittest && make stubtest && make docker_sandbox_start && make sandboxtest
+  - name: run NEAR sandbox
+    command: make docker_sandbox_start
 
+  - name: build contracts
+    init: |
+      rustup target add wasm32-unknown-unknown 
+      npm install
+    command: make unittest && make stubtest && make sandboxtest
 
