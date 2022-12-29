@@ -9,5 +9,5 @@ tasks:
     init: |
       rustup target add wasm32-unknown-unknown 
       npm install
-    command: make unittest && make stubtest && make sandboxtest
+    command: make unittest && make sandboxtest
 
