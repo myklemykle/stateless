@@ -56,7 +56,7 @@ trait MyCallbacks {
 
 /// Public methods on this contract for making payments.
 trait Payments {
-    fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise ;
+    fn split_payment(&mut self, payees: Vec<AccountId> ) -> Promise ;
     fn pay_minters(&mut self, minter_contract: AccountId) -> Promise ;
     fn list_minters_cb(&mut self) -> Promise ;
     fn report_payment(&self, amount: JsonBalance) -> JsonBalance;
@@ -69,15 +69,15 @@ impl Payments for Distrotron {
     /// Takes a list of NEAR account IDs.
     /// Divides an attached payment of NEAR evenly between those accounts.
     /// Returns a Promise that resolves to the number of YoctoNEAR paid to each recipient.
-    //  __pay_out is the real function, this is just the external wrapper.
+    //  __split_payment is the real function, this is just the external wrapper.
     #[payable]
-    fn pay_out(&mut self, payees: Vec<AccountId> ) -> Promise {
-        self.__pay_out(payees)
+    fn split_payment(&mut self, payees: Vec<AccountId> ) -> Promise {
+        self.__split_payment(payees)
     }
 
     /// Takes a Mintbase contract ID. 
     /// Fetches the list of NEAR accounts from that contract's list_minters() method,
-    /// then delegates to pay_out() to distribute the attached funds to those accounts.
+    /// then delegates to split_payment() to distribute the attached funds to those accounts.
     /// Returns a Promise that resolves to the number of YoctoNEAR paid to each recipient.
     #[payable]
     fn pay_minters(&mut self, minter_contract: AccountId) -> Promise {
@@ -121,7 +121,7 @@ impl Payments for Distrotron {
                // test for length:
                 assert!( payees.len() > 0, "no minters found");
 
-                self.__pay_out(payees)
+                self.__split_payment(payees)
             }
         }
     }
@@ -171,7 +171,7 @@ impl Distrotron {
     }
 
     /// Pay out the complete attached sum to the payees, no matter the gas.
-    fn __pay_out(&mut self, mut payees: Vec<AccountId> ) -> Promise {
+    fn __split_payment(&mut self, mut payees: Vec<AccountId> ) -> Promise {
         self.test_payees(payees.clone());
 
         // sort and de-dup
@@ -277,32 +277,32 @@ mod unit_tests {
     }
 
     #[test]
-    // pay_out should fail with no list of recipients:
+    // split_payment should fail with no list of recipients:
     #[should_panic(
         expected = r#"Empty recipient list"#
     )]
-    fn pay_out_1() { 
+    fn split_payment_1() { 
         let mut c = get_context(vec![], false);
         c.attached_deposit = to_ynear(10);
         testing_env!(c);
         let mut contract = Distrotron {};
 
         let chumps = vec![];
-        let _cut = contract.pay_out(chumps);
+        let _cut = contract.split_payment(chumps);
     }
 
 
     #[test]
-    // pay_out should fail if no payment attached
+    // split_payment should fail if no payment attached
     #[should_panic(
         expected = r#"No payment attached"#
     )]
-    fn pay_out_2() { 
+    fn split_payment_2() { 
         let c = get_context(vec![], false);
         testing_env!(c);
         let mut contract = Distrotron {};
         let chumps = vec![bob(), carol(), dick(), eve()];
-        let _cut = contract.pay_out(chumps);
+        let _cut = contract.split_payment(chumps);
     }
 
     // pay_minters() should fail if argument is invalid

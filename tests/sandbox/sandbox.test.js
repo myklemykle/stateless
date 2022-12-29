@@ -5,7 +5,7 @@
  * It uses these environment variables:
  *
  * Mandatory:
- * 	* NEAR_ENV -- "testnet", "sandbox" or "remotesandbox"
+ * 	* NEAR_ENV -- "testnet", "sandbox" or "localnet"
  *
  * Mandatory for testing with a remote sanbox:
  * 	* NEAR_SANDBOX_NODE -- hostname or IP of remote sandbox, or leave blank for local
@@ -92,7 +92,7 @@ async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
 		case "sandbox": // local or remote standalone NEAR daemon
 		case "localnet": 
 			neard_home = process.env.NEARD_HOME || homedir + "/.near";
-			keyPath = process.env.NEARD_KEY || process.env.NEARD_HOME + "/validator_key.json";
+			keyPath = process.env.NEARD_KEY || neard_home + "/validator_key.json";
 			if (! await fileExists(keyPath) ) {
 				console.error("can't find NEAR credentials at '" + keyPath + "'");
 				process.exit(3);
@@ -106,10 +106,11 @@ async function getConfig(env = process.env.NEAR_ENV || "sandbox") {
         minterContract: "stub",
 				keyPath: keyPath
       };
+			console.log("keypath = " + config.keyPath);
 			break;
 
 		default: 
-			console.error("please set the NEAR_ENV environment variable to 'sandbox' or 'testnet'");
+			console.error("please set the NEAR_ENV environment variable to 'localnet' or 'testnet'");
 			process.exit(4);
   }
 
@@ -269,7 +270,7 @@ function loadDistro(acct) {
 	return new nearAPI.Contract(
 		acct, // will call it
 		fullAccountName(config.contractAccount), // name (string) of acct where contract is deployed
-		{changeMethods: ["pay_minters", "pay_out"]}
+		{changeMethods: ["pay_minters", "split_payment"]}
 	);
 }
 
@@ -336,7 +337,7 @@ describe("payment tests", ()=>{
 
 		// have carol send some money to distrotron
 		
-		net_payment = BigInt( await distro.pay_out( { 
+		net_payment = BigInt( await distro.split_payment( { 
 			args: {
 				payees: [users.alice.accountId, users.bob.accountId]
 		}, 
@@ -378,7 +379,7 @@ describe("payment tests", ()=>{
 
 		// have carol send some money to distrotron
 		
-		net_payment = BigInt( await distro.pay_out( { 
+		net_payment = BigInt( await distro.split_payment( { 
 			args: {
 				payees: [users.alice.accountId, users.bob.accountId, users.alice.accountId]
 		}, 
@@ -424,7 +425,7 @@ describe("payment tests", ()=>{
 		// have carol send some money to distrotron
 		
 		try { 
-			net_payment = BigInt( await distro.pay_out( { 
+			net_payment = BigInt( await distro.split_payment( { 
 				args: {
 					payees: [users.alice.accountId, "your_mom", users.bob.accountId]
 			}, 
