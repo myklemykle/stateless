@@ -14,6 +14,8 @@ Both of these methods return a NEAR `Balance` (currently a `BigInt`) of the net 
 
 The other contract in this repo, `stub`, provides a stub implementation of `list_minters()` for sandbox testing.
 
+[![Open in Gitpod](https://gitpod.io/button/open-in-gitpod.svg)](https://gitpod.io/#https://github.com/myklemykle/stateless/tree/milestone1_gitpod)
+
 ## Requirements:
 
 Some standard UNIX tools: `make`, `sed`. Windows users can install the [Gnuwin32](https://gnuwin32.sourceforge.net/) versions of these.
