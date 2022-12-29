@@ -2,10 +2,9 @@
 //! it stubs the list_minters() method that we expect to see on Mintbase contracts.
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
+//use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
+use near_sdk::{near_bindgen, AccountId};
 use near_sdk::collections::Vector;
-use near_sdk::json_types::U128;
-use near_sdk::serde_json::json;
 
 near_sdk::setup_alloc!();
 
@@ -60,7 +59,7 @@ impl Stub {
 mod stub_tests {
     use super::*;
     use near_sdk::MockedBlockchain;
-    use near_sdk::{testing_env, VMContext};
+    use near_sdk::{testing_env, VMContext, Balance};
 
     fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
         VMContext {
