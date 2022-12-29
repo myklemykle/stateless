@@ -1,6 +1,6 @@
 [package]
 name = "stateless-contracts"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["mykle hansen for STATELESS <mykle@mykle.com>"]
 edition = "2021"
 
@@ -25,3 +25,6 @@ members = [
   "distrotron","stub"
 ]
 
+[lib]
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"
