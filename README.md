@@ -30,6 +30,7 @@ The tests require [Node.js, npm](https://nodejs.org/en/download/) and [npx](http
 ## Building:
 
 * `make release` to compile Distrotron for deployment.
+* `make doc` to generate HTML docs from inline rustdoc documentation.
 
 ## Testing:
 
