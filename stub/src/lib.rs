@@ -3,15 +3,15 @@
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 //use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
-use near_sdk::{near_bindgen, AccountId};
 use near_sdk::collections::Vector;
+use near_sdk::{near_bindgen, AccountId};
 
 near_sdk::setup_alloc!();
 
 #[near_bindgen]
 #[derive(BorshDeserialize, BorshSerialize)]
 pub struct Stub {
-    minters: Vector<AccountId>
+    minters: Vector<AccountId>,
 }
 
 impl Default for Stub {
@@ -19,22 +19,19 @@ impl Default for Stub {
         let mut minters = Vector::new(b"asdf".to_vec());
         minters.push(&"alice.foo".to_string());
         minters.push(&"bob.foo".to_string());
-        Self {
-            minters: minters
-        }
+        Self { minters: minters }
     }
 }
 
 #[near_bindgen]
 impl Stub {
-
     /// Stub contract initiaization.
-    /// Right after this contract is deployed, we must initialize storage 
+    /// Right after this contract is deployed, we must initialize storage
     /// by calling either self.mock_minters() or this no-op init() method,
     /// which calls self.default().
     /// Otherwise, the first call to list_minters() will trigger the default() method,
     /// leading to an "illegal storage_write() in view method" failure.
-    pub fn init (&mut self) -> bool {
+    pub fn init(&mut self) -> bool {
         true
     }
 
@@ -51,15 +48,13 @@ impl Stub {
     pub fn list_minters(&self) -> Vec<AccountId> {
         self.minters.to_vec()
     }
-
 }
-
 
 #[cfg(test)]
 mod stub_tests {
     use super::*;
     use near_sdk::MockedBlockchain;
-    use near_sdk::{testing_env, VMContext, Balance};
+    use near_sdk::{testing_env, Balance, VMContext};
 
     fn get_context(input: Vec<u8>, is_view: bool) -> VMContext {
         VMContext {
@@ -87,7 +82,7 @@ mod stub_tests {
     }
 
     #[test]
-    fn list_minters_1() { 
+    fn list_minters_1() {
         let mut c = get_context(vec![], false);
         c.attached_deposit = to_ynear(10);
         testing_env!(c);
@@ -98,7 +93,6 @@ mod stub_tests {
         assert_eq!(chumps[0], "alice.foo");
         assert_eq!(chumps[1], "bob.foo");
     }
-
 
     #[test]
     fn mock_minters_1() {
@@ -113,5 +107,4 @@ mod stub_tests {
         assert_eq!(chumps[0], "mario.testnet");
         assert_eq!(chumps[1], "luigi.testnet");
     }
-
 }

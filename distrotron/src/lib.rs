@@ -1,9 +1,9 @@
 //! This contract distributes incoming payments of NEAR tokens to a list of recipient accounts.
 
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
-use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
+use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
 
 near_sdk::setup_alloc!();
 
@@ -15,29 +15,29 @@ pub struct Distrotron {
 }
 
 // near_sdk::Balance is u128, so the JSON BigInt equiv is:
-pub type JsonBalance = U128; 
+pub type JsonBalance = U128;
 
-const GGAS: u64 = 1_000_000_000;    
+const GGAS: u64 = 1_000_000_000;
 const TGAS: u64 = 1000 * GGAS;
 
 // Here are some generous gas estimates, for when you're working on modifications that might increase gas consumption:
-// const TXFEE_GAS: u64 = 2 * TGAS; 
-// const LIST_MINTERS_GAS: u64 = 10 * TGAS; 
+// const TXFEE_GAS: u64 = 2 * TGAS;
+// const LIST_MINTERS_GAS: u64 = 10 * TGAS;
 // const PAY_MINTERS_GAS: u64  = 50 * TGAS;
 // const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
 //
-// These are actual gas costs measured from real transactions, 
+// These are actual gas costs measured from real transactions,
 // but specific to the version of this contract where I made the measurements.
 // (The NEAR Explorer shows the gas cost of each part of the transaction.)
 // If you modify the contract, please re-check the Explorer and update these if necessary..
-const TXFEE_GAS: u64            = 2 * TGAS; 
+const TXFEE_GAS: u64 = 2 * TGAS;
 // LIST_MINTERS_GAS is dependent on Mintbase's contract &  could change at any time.
 // Also in our stub contract it seems to cost more as the number of minters goes up.
 // But this seems a safe margin:
-const LIST_MINTERS_GAS: u64     = 10 * TGAS; 
-const PAY_MINTERS_GAS: u64      = 8 * TGAS; 
-const REPORT_PAYMENT_GAS: u64   = 3 * TGAS;
-                                          
+const LIST_MINTERS_GAS: u64 = 10 * TGAS;
+const PAY_MINTERS_GAS: u64 = 8 * TGAS;
+const REPORT_PAYMENT_GAS: u64 = 3 * TGAS;
+
 /// The list_minters() API method on a Mintbase contract returns a list of NEAR accounts
 /// who are authorized to mint with that contract instance.
 /// The contract owner can modify this list in the Mintbase interface.
@@ -56,12 +56,11 @@ trait MyCallbacks {
 
 /// Public methods on this contract for making payments.
 trait Payments {
-    fn split_payment(&mut self, payees: Vec<AccountId> ) -> Promise ;
-    fn pay_minters(&mut self, minter_contract: AccountId) -> Promise ;
-    fn list_minters_cb(&mut self) -> Promise ;
+    fn split_payment(&mut self, payees: Vec<AccountId>) -> Promise;
+    fn pay_minters(&mut self, minter_contract: AccountId) -> Promise;
+    fn list_minters_cb(&mut self) -> Promise;
     fn report_payment(&self, amount: JsonBalance) -> JsonBalance;
 }
-
 
 // our contract:
 #[near_bindgen]
@@ -71,37 +70,41 @@ impl Payments for Distrotron {
     /// Returns a Promise that resolves to the number of YoctoNEAR paid to each recipient.
     //  __split_payment is the real function, this is just the external wrapper.
     #[payable]
-    fn split_payment(&mut self, payees: Vec<AccountId> ) -> Promise {
+    fn split_payment(&mut self, payees: Vec<AccountId>) -> Promise {
         self.__split_payment(payees)
     }
 
-    /// Takes a Mintbase contract ID. 
+    /// Takes a Mintbase contract ID.
     /// Fetches the list of NEAR accounts from that contract's list_minters() method,
     /// then delegates to split_payment() to distribute the attached funds to those accounts.
     /// Returns a Promise that resolves to the number of YoctoNEAR paid to each recipient.
     #[payable]
     fn pay_minters(&mut self, minter_contract: AccountId) -> Promise {
-        assert!( env::is_valid_account_id(minter_contract.as_bytes()), "Invalid contract ID" ) ;
-        ext_mintbase_contract::list_minters(&minter_contract, 0, LIST_MINTERS_GAS)
-            .then(callbacks::list_minters_cb(&env::current_account_id(), 
-                    env::attached_deposit(), 
-                    ////////////////////////////////
-                    // complicated gas accounting:
-                    // send along all the gas we got, 
-                    env::prepaid_gas()  
+        assert!(
+            env::is_valid_account_id(minter_contract.as_bytes()),
+            "Invalid contract ID"
+        );
+        ext_mintbase_contract::list_minters(&minter_contract, 0, LIST_MINTERS_GAS).then(
+            callbacks::list_minters_cb(
+                &env::current_account_id(),
+                env::attached_deposit(),
+                ////////////////////////////////
+                // complicated gas accounting:
+                // send along all the gas we got,
+                env::prepaid_gas()
                     // except for:
                     - (
                     // what we've used so far,
-                    env::used_gas() 
+                    env::used_gas()
                     // plus what we just attached to the other promise above,
                      + LIST_MINTERS_GAS
                     // plus the gas for this method
                      + PAY_MINTERS_GAS
                      // and the overhead gas cost of the entire transaction
                      + TXFEE_GAS
-                    ) 
-                    ////////////////////////////////
-                  ))
+                    ), ////////////////////////////////
+            ),
+        )
     }
 
     /// Callback method.
@@ -118,8 +121,8 @@ impl Payments for Distrotron {
             PromiseResult::Successful(val) => {
                 let payees = near_sdk::serde_json::from_slice::<Vec<AccountId>>(&val).unwrap();
 
-               // test for length:
-                assert!( payees.len() > 0, "no minters found");
+                // test for length:
+                assert!(payees.len() > 0, "no minters found");
 
                 self.__split_payment(payees)
             }
@@ -130,21 +133,19 @@ impl Payments for Distrotron {
     /// When all payments are complete, this function returns the number of YoctoNear paid to each payee.
     // Really it just echoes back the JsonBalance passed to it.
     // It must be public so that it can be the target of a function_call(), but is not externally useful.
-    fn report_payment(&self, amount: JsonBalance) -> JsonBalance { 
+    fn report_payment(&self, amount: JsonBalance) -> JsonBalance {
         // Return the count of how much each payee received:
         amount
     }
-
 }
 
 impl Distrotron {
-
     /// abort if the payment or payee list are invalid
-    fn test_payees(&mut self, payees: Vec<AccountId> ) -> bool {
-        // count the recipients.  
+    fn test_payees(&mut self, payees: Vec<AccountId>) -> bool {
+        // count the recipients.
         // u32 only goes to 4 billion, and there are 8+ billion people in the world ...
         let count: u128 = payees.len().try_into().unwrap();
-                
+
         // Fail if none.
         assert!(count > 0, "Empty recipient list");
 
@@ -157,7 +158,7 @@ impl Distrotron {
         // or else count on the transaction failing if it's not kosher.
         // But apparently we can't test if accounts exist for some NEAR reason:
         // https://stackoverflow.com/questions/70819819/how-can-i-verify-if-a-near-address-is-valid-in-smart-contract/70820257#70820257
-        
+
         // We could at least check that the IDs are valid format:
         // https://docs.rs/near-sdk/latest/near_sdk/env/fn.is_valid_account_id.html
         /*
@@ -166,12 +167,12 @@ impl Distrotron {
         }
         */
         // ... but what's the point if it can still fail?
-        
+
         true
     }
 
     /// Pay out the complete attached sum to the payees, no matter the gas.
-    fn __split_payment(&mut self, mut payees: Vec<AccountId> ) -> Promise {
+    fn __split_payment(&mut self, mut payees: Vec<AccountId>) -> Promise {
         self.test_payees(payees.clone());
 
         // sort and de-dup
@@ -191,20 +192,19 @@ impl Distrotron {
         // But it occurs to me that this sort of leftover must exist everywhere in the universe of
         // traditional banking and blockchain.  One assumes, or hopes, that any sort of abuse or bug will be detected
         // by audits.
-        
-        // TODO: we could return it .... though i think that costs more in gas than you'd get back.
-        
-        let slice = total_payment / count; 
 
-        let finish = Promise::new( env::current_account_id() ).function_call(b"report_payment".to_vec(), 
-                                                                        json!({
-                                                                            "amount": U128(slice)
-                                                                        }).to_string().into_bytes(),
-                                                                        0, // no payment 
-                                                                        REPORT_PAYMENT_GAS
-                                                                        );
-        
-        let payment_promise = self.pay_each(payees.clone(), slice);                                     // all of it
+        // TODO: we could return it .... though i think that costs more in gas than you'd get back.
+
+        let slice = total_payment / count;
+
+        let finish = Promise::new(env::current_account_id()).function_call(
+            b"report_payment".to_vec(),
+            json!({ "amount": U128(slice) }).to_string().into_bytes(),
+            0, // no payment
+            REPORT_PAYMENT_GAS,
+        );
+
+        let payment_promise = self.pay_each(payees.clone(), slice); // all of it
         payment_promise.then(finish)
     }
 
@@ -212,22 +212,21 @@ impl Distrotron {
     /// resolves once all of the transfers have completed or failed.
     fn pay_each(&self, payees: Vec<AccountId>, sum: Balance) -> Promise {
         // pay each payee in a loop
-        let promises: Vec<Promise> = payees.into_iter().map(|p| {
-            Promise::new(p.to_string()).transfer(sum)
-        } ).collect();
-        
+        let promises: Vec<Promise> = payees
+            .into_iter()
+            .map(|p| Promise::new(p.to_string()).transfer(sum))
+            .collect();
+
         // boil all those promises down into a super-promise
         let mut big_p = promises[0].clone();
         for pi in 1..promises.len() {
             //big_p = big_p.and(promises[pi].clone());   // execute in parallel
-            big_p = big_p.then(promises[pi].clone());   // execute one at a time
+            big_p = big_p.then(promises[pi].clone()); // execute one at a time
         }
 
         big_p
     }
-
 }
-
 
 #[cfg(test)]
 mod unit_tests {
@@ -278,10 +277,8 @@ mod unit_tests {
 
     #[test]
     // split_payment should fail with no list of recipients:
-    #[should_panic(
-        expected = r#"Empty recipient list"#
-    )]
-    fn split_payment_1() { 
+    #[should_panic(expected = r#"Empty recipient list"#)]
+    fn split_payment_1() {
         let mut c = get_context(vec![], false);
         c.attached_deposit = to_ynear(10);
         testing_env!(c);
@@ -291,13 +288,10 @@ mod unit_tests {
         let _cut = contract.split_payment(chumps);
     }
 
-
     #[test]
     // split_payment should fail if no payment attached
-    #[should_panic(
-        expected = r#"No payment attached"#
-    )]
-    fn split_payment_2() { 
+    #[should_panic(expected = r#"No payment attached"#)]
+    fn split_payment_2() {
         let c = get_context(vec![], false);
         testing_env!(c);
         let mut contract = Distrotron {};
@@ -307,9 +301,7 @@ mod unit_tests {
 
     // pay_minters() should fail if argument is invalid
     #[test]
-    #[should_panic(
-        expected = r#"Invalid contract ID"#
-    )]
+    #[should_panic(expected = r#"Invalid contract ID"#)]
     fn pay_minters_1() {
         let mut c = get_context(vec![], false);
         c.attached_deposit = to_ynear(10);
@@ -320,5 +312,4 @@ mod unit_tests {
 
     // No unit tests are provided here for the methods that return Promises to external contract calls;
     // run sandbox tests for coverage of those.
-
 }
