@@ -212,6 +212,17 @@ sandbox_payment:
 		export NEAR_ENV=localnet; \
 		npx jest -t "payment"
 
+# Build and launch the web demo
+
+demo: demo_setup demo_build
+
+demo_setup: web/node_modules
+	
+web/node_modules: web/package.json
+	cd web && npm install
+	
+demo_build:
+	cd web && npx parcel src/distrotron.html
 
 #####
 # doc targets:
