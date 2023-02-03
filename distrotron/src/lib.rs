@@ -21,11 +21,11 @@ const GGAS: u64 = 1_000_000_000;
 const TGAS: u64 = 1000 * GGAS;
 
 // Here are some generous gas estimates, for when you're working on modifications that might increase gas consumption:
-//const TXFEE_GAS: u64 = 2 * TGAS;
-//const LIST_MINTERS_GAS: u64 = 10 * TGAS;
-//const PAY_MINTERS_GAS: u64  = 50 * TGAS;
-//const REFUND_UNPAID_GAS: u64  = 10 * TGAS;
-//const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
+// const TXFEE_GAS: u64 = 2 * TGAS;
+// const LIST_MINTERS_GAS: u64 = 10 * TGAS;
+// const PAY_MINTERS_GAS: u64  = 50 * TGAS;
+// const REFUND_UNPAID_GAS: u64  = 10 * TGAS;
+// const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
 //
 // These stingy-er measurements are actual gas costs measured from real transactions,
 // but specific to the version of this contract where I made the measurements.
@@ -62,7 +62,7 @@ trait Payments {
     fn split_payment(&mut self, payees: Vec<AccountId>) -> Promise;
     fn pay_minters(&mut self, minter_contract: AccountId) -> Promise;
     fn list_minters_cb(&mut self) -> Promise;
-    fn refund_unpaid(&self, amount: JsonBalance) -> PromiseOrValue<bool>;
+    fn refund_unpaid(&self, amount: JsonBalance) -> PromiseOrValue<JsonBalance>;
     fn report_payment(&self, amount: JsonBalance) -> JsonBalance;
 }
 
@@ -137,27 +137,30 @@ impl Payments for Distrotron {
     // If all our payments succeeded, there should be no more attached deposit.
     // But if anything failed, we need to do a refund of all remaining funds.
     // This func must be public so that it can be the target of a function_call()
-    fn refund_unpaid(&self, amount: JsonBalance) -> PromiseOrValue<bool> {
+    fn refund_unpaid(&self, amount: JsonBalance) -> PromiseOrValue<JsonBalance> {
 
         // i'm sure there's a Rust one-liner for this:
         let i = env::promise_results_count();
-        let mut fails = 0;
+        let mut fails: u64 = 0;
         for p in 1..i {
             if env::promise_result(p) == Failed {
                 fails += 1;
             }
         }
 
-        // log!("RU: {} promise results", i);   // DEBUG
-        // log!("RU: {} failures", fails);      // DEBUG
-        //log!("RU: acct balance {}", env::account_balance());  // DEBUG
-
         if fails > 0 {
-            let refund_promise = Promise::new( env::signer_account_id()).transfer(fails * amount.0);
-            // log!("payback time: {}!", fails*amount.0); //DEBUG
+            // process a refund
+            let refund = u128::from(fails) * amount.0;
+            log!("{}/{} payments succeeded", (i - fails), i);
+            log!("refunding {} yocto to caller", refund);
+            let refund_promise = Promise::new( env::signer_account_id()).transfer(refund);
             PromiseOrValue::Promise(refund_promise)
+
         } else { 
-            PromiseOrValue::Value(true)
+            // No failures, no refund needed.
+            //
+            log!("All {} payments succeeded", i);
+            PromiseOrValue::Value(amount)
         }
     }
 
@@ -263,7 +266,6 @@ impl Distrotron {
         let mut big_p = promises[0].clone();
         for pi in 1..promises.len() {
             big_p = big_p.and(promises[pi].clone());   // execute in parallel
-            //big_p = big_p.then(promises[pi].clone()); // execute one at a time
         }
 
         big_p
