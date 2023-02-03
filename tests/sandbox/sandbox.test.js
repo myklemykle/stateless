@@ -279,15 +279,6 @@ async function totalBalance (acct) {
   return BigInt(b.total)
 }
 
-// i'm seeing some super-annoying intermittent failures, only in local sandbox,
-// only when running the payment-refund test in conjunction with another
-// payment test.  It appears to be a matter of the transaction not
-// getting finalized before the next balance inquiry.  So I've added some delays ...
-// sadly, it seems to work.  But I'd like to find a proper solution.
-function delay(time) {
-  return new Promise(resolve => setTimeout(resolve, time));
-}
-
 jest.setTimeout(600000)
 describe('blockchain state setup (slow!)', () => {
   beforeAll(async () => {
@@ -354,18 +345,20 @@ describe('payment tests', () => {
     assert(minters[1] === 'bruce.beep')
   })
 
-  test('BOOP can pay out funds to a list of users', async () => {
+  test('can pay out funds to a list of recipient accounts', async () => {
     const users = loadTestUsers()
+    users.distro = loadTestUser(config.contractAccount)
 
     const balances = {
       before: {
         alice: await totalBalance(users.alice),
         bob: await totalBalance(users.bob),
-        carol: await totalBalance(users.carol)
+        carol: await totalBalance(users.carol),
+				distro: await totalBalance(users.distro)
       }
     }
 
-    const distro = loadDistro(users.carol)
+    const distro = loadDistro(users.distro)
 
     // have carol send some money to distrotron
 
@@ -376,8 +369,6 @@ describe('payment tests', () => {
       gas: LOTSAGAS, // attached GAS (optional)
       amount: n2y(1)				// attached near
     }))
-
-		await delay(1000)
 
     // check that it was distributed to alice and bob
 
@@ -397,7 +388,7 @@ describe('payment tests', () => {
 		// console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR') 
   })
 
-  test('duplicates are removed from user list', async () => {
+  test('duplicates are removed from recipient list', async () => {
     const users = loadTestUsers()
 
     const balances = {
@@ -468,8 +459,6 @@ describe('payment tests', () => {
       amount: n2y(1)				// attached near
     }))
 
-		await delay(1000)
-
     // 3. check that it was distributed to alice and carol
 
     balances.after = {
@@ -488,7 +477,7 @@ describe('payment tests', () => {
     console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR')
   })
 
-  test('BOOP payment to nonexistent user wont go through', async () => {
+  test('payments to nonexistent accounts don\'t go through, are instead refunded', async () => {
     const users = loadTestUsers()
     users.distro = loadTestUser(config.contractAccount)
 
