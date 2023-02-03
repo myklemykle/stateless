@@ -41,8 +41,8 @@ const testUsers = {
   alice: '',
   bob: '',
   carol: '',
-  doug: '',
-  emily: ''
+  // doug: '',
+  // emily: ''
 }
 
 // this works with node v16:
@@ -105,7 +105,7 @@ async function getConfig (env = process.env.NEAR_ENV || 'sandbox') {
         minterContract: 'stub',
         keyPath
       }
-      console.log('keypath = ' + config.keyPath)
+			// console.log('keypath = ' + config.keyPath)
       break
 
     default:
@@ -113,7 +113,7 @@ async function getConfig (env = process.env.NEAR_ENV || 'sandbox') {
       process.exit(4)
   }
 
-  console.debug(config)
+	// console.debug(config)
   return config
 }
 
@@ -130,7 +130,7 @@ function fullAccountName (prefix) {
 
 async function connectToNear () {
   config = await getConfig()
-  console.log('connecting to ' + config.networkId)
+	// console.log('connecting to ' + config.networkId)  //DEBUG
 
   const keyFile = require(config.keyPath)
   masterKey = nearAPI.KeyPair.fromString(
@@ -148,7 +148,7 @@ async function connectToNear () {
     nodeUrl: config.nearnodeUrl
   })
   masterAccount = new nearAPI.Account(near.connection, config.masterAccount)
-  console.log('connected')
+	// console.log('connected')  //DEBUG
 }
 
 async function createTestUser (
@@ -161,7 +161,7 @@ async function createTestUser (
   // delete it first,
   try {
     await account.deleteAccount(config.masterAccount)
-    console.log('deleted ' + accountPrefix)
+		// console.log('deleted ' + accountPrefix)  // DEBUG
   } catch {
     // fails if it didn't exist
   }
@@ -172,12 +172,12 @@ async function createTestUser (
     pubKey,
     n2y(initBalance)
   )
-  console.log('created ' + accountId)
+	console.log('recreated ' + accountId)  // DEBUG
   return account
 }
 
 async function makeTestUsers () {
-  console.log(Object.keys(testUsers))
+	// console.log(Object.keys(testUsers)) //DEBUG
   for (u of Object.keys(testUsers)) {
     testUsers[u] = await createTestUser(u, 10)
   };
@@ -279,6 +279,15 @@ async function totalBalance (acct) {
   return BigInt(b.total)
 }
 
+// i'm seeing some super-annoying intermittent failures, only in local sandbox,
+// only when running the payment-refund test in conjunction with another
+// payment test.  It appears to be a matter of the transaction not
+// getting finalized before the next balance inquiry.  So I've added some delays ...
+// sadly, it seems to work.  But I'd like to find a proper solution.
+function delay(time) {
+  return new Promise(resolve => setTimeout(resolve, time));
+}
+
 jest.setTimeout(600000)
 describe('blockchain state setup (slow!)', () => {
   beforeAll(async () => {
@@ -317,7 +326,35 @@ describe('payment tests', () => {
     await connectToNear()
   })
 
-  test('can pay out funds to a list of users', async () => {
+  test('stub contract works', async () => {
+    if (config.minterContract != 'stub') {
+      console.log('not using stub')
+      return
+    }
+
+    const users = loadTestUsers()
+    const stub = getNewMinterContract(users.stub)
+
+    // call the list_minters method on the stub contract,
+    // which could be any old leftover from some other test ...
+    minters = await stub.list_minters()
+    // mock up a minters list:
+
+    await stub.mock_minters({
+      args: {
+        minters: ['alice.boop', 'bruce.beep']
+      },
+      gas: LOTSAGAS // attached GAS (optional)
+    })
+
+    // confirm it worked:
+    minters = await stub.list_minters()
+    console.log(minters)
+    assert(minters[0] === 'alice.boop')
+    assert(minters[1] === 'bruce.beep')
+  })
+
+  test('BOOP can pay out funds to a list of users', async () => {
     const users = loadTestUsers()
 
     const balances = {
@@ -340,6 +377,8 @@ describe('payment tests', () => {
       amount: n2y(1)				// attached near
     }))
 
+		await delay(1000)
+
     // check that it was distributed to alice and bob
 
     balances.after = {
@@ -348,14 +387,14 @@ describe('payment tests', () => {
       carol: await totalBalance(users.carol)
     }
 
-    console.log('Net payment: ' + net_payment + ' = ' + y2n(net_payment) + ' NEAR')
-    console.log(balances)
+		// console.log('Net payment: ' + net_payment + ' = ' + y2n(net_payment) + ' NEAR')
+		// console.log(balances)
     assert(balances.before.alice + net_payment == balances.after.alice, 'alice bad balance')
     assert(balances.before.bob + net_payment == balances.after.bob, 'bob bad balance')
 
     // What did Carol pay for gas?
     const gascost = balances.before.carol - (balances.after.carol + (BigInt(2) * net_payment))
-    console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR')
+		// console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR') 
   })
 
   test('duplicates are removed from user list', async () => {
@@ -400,107 +439,6 @@ describe('payment tests', () => {
     console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR')
   })
 
-  test('payment to nonexistent user wont go through', async () => {
-    const users = loadTestUsers()
-    users.distro = loadTestUser(config.contractAccount)
-
-    const balances = {
-      before: {
-        alice: await totalBalance(users.alice),
-        bob: await totalBalance(users.bob),
-        carol: await totalBalance(users.carol),
-        distro: await totalBalance(users.distro)
-      }
-    }
-
-    const distro = loadDistro(users.carol)
-
-    // have carol send some money to distrotron
-
-    try {
-      net_payment = BigInt(await distro.split_payment({
-        args: {
-          payees: [users.alice.accountId, 'your_mom', users.bob.accountId]
-        },
-        gas: LOTSAGAS, // attached GAS (optional)
-        amount: n2y(1)				// attached near
-      }))
-      //
-      // should fail:
-      assert(false, 'failure failure: failure failed to fail')
-    } catch {
-      // check that nothing was distributed
-
-      balances.after = {
-        alice: await totalBalance(users.alice),
-        bob: await totalBalance(users.bob),
-        carol: await totalBalance(users.carol),
-        distro: await totalBalance(users.distro)
-      }
-
-      // What did Carol pay
-
-      const cost = balances.before.carol - balances.after.carol
-      console.log('cost: ' + cost + ' = ' + y2n(cost) + ' NEAR')
-
-      console.log(balances)
-
-      // currently the transactions are not atomic, so the payments will go through for all good users ...
-      // assert(balances.before.alice == balances.after.alice, "alice bad balance");
-      // assert(balances.before.bob == balances.after.bob, "bob bad balance");
-    }
-  })
-
-  test('bad minter in list causes crash', async () => {
-    const users = loadTestUsers()
-
-    const balances = {
-      before: {
-        alice: await totalBalance(users.alice),
-        bob: await totalBalance(users.bob),
-        carol: await totalBalance(users.carol)
-      }
-    }
-
-    // 1. mock up a minters list with a nonexistent user on it
-    const mc = getNewMinterContract(users.stub)
-    await mc.mock_minters({
-      args: { minters: [users.alice.accountId, 'asdf.mcasdfserson', users.carol.accountId, 'count_chocula'] }
-    })
-
-    // 2. have bob send some money to distrotron
-    const distro = loadDistro(users.bob)
-    try {
-      net_payment = BigInt(await distro.pay_minters({
-        args: {
-          minter_contract: fullAccountName(config.minterContract)
-        },
-        gas: LOTSAGAS, // attached GAS (optional)
-        amount: n2y(1)				// attached near
-      }))
-
-      // we expect that to fail ...
-      assert(false, 'bad payment should have failed')
-    } catch {
-      // 3. check that funds didn't move
-      balances.after = {
-        alice: await totalBalance(users.alice),
-        bob: await totalBalance(users.bob),
-        carol: await totalBalance(users.carol)
-      }
-
-      console.log(balances)
-      // still a problem ...
-      // assert(balances.before.alice == balances.after.alice, "alice bad balance");
-      // assert(balances.before.bob == balances.after.carol, "bob bad balance");
-      // assert(balances.before.carol == balances.after.carol, "carol bad balance");
-    }
-
-    // 4. what did bob pay for gas?
-    const gascost = balances.before.bob - (balances.after.bob + (BigInt(2) * net_payment))
-    console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR')
-  })
-
   test('can pay the list of minters from a contract', async () => {
     const users = loadTestUsers()
 
@@ -530,6 +468,8 @@ describe('payment tests', () => {
       amount: n2y(1)				// attached near
     }))
 
+		await delay(1000)
+
     // 3. check that it was distributed to alice and carol
 
     balances.after = {
@@ -548,32 +488,56 @@ describe('payment tests', () => {
     console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR')
   })
 
-  test('stub contract works', async () => {
-    if (config.minterContract != 'stub') {
-      console.log('not using stub')
-      return
+  test('BOOP payment to nonexistent user wont go through', async () => {
+    const users = loadTestUsers()
+    users.distro = loadTestUser(config.contractAccount)
+
+    const balances = {
+      before: {
+        alice: await totalBalance(users.alice),
+        bob: await totalBalance(users.bob),
+				carol: await totalBalance(users.carol), 
+				distro: await totalBalance(users.distro)
+			},
+			after: {},
+			delta: {}
     }
 
-    const users = loadTestUsers()
-    const stub = getNewMinterContract(users.stub)
+    const distro = loadDistro(users.carol)
 
-    // call the list_minters method on the stub contract,
-    // which could be any old leftover from some other test ...
-    minters = await stub.list_minters()
+    // have carol send 3 NEAR to distrotron
 
-    // mock up a minters list:
-    await stub.mock_minters({
-      args: {
-        minters: ['alice.boop', 'bruce.beep']
-      },
-      gas: LOTSAGAS // attached GAS (optional)
-    })
+		net_payment = BigInt(await distro.split_payment({
+			args: {
+				// two valid accounts, one bogus one.
+				payees: [users.alice.accountId, 'your_mom', users.bob.accountId]
+			},
+			gas: LOTSAGAS, // attached GAS (optional)
+			amount: n2y(0.3)				// attached near
+		}))
 
-    // confirm it worked:
-    minters = await stub.list_minters()
-    console.log(minters)
-    assert(minters[0] === 'alice.boop')
-    assert(minters[1] === 'bruce.beep')
+		// But the transactions are not atomic, so the payments will go through for all good users ...
+
+		for (u of Object.keys(balances.before)) {
+			balances.after[u] = await totalBalance(users[u])
+			balances.delta[u] = BigInt(balances.after[u]) - BigInt(balances.before[u])
+			console.log("user " + u + " balance delta:" + y2n( BigInt(balances.delta[u])))
+		};
+
+		// check that alice and bob got paid 1 NEAR each:
+		assert(balances.delta.alice == n2y(0.1), "alice was not paid");
+		assert(balances.delta.bob == n2y(0.1), "bob was not paid");
+
+		// check that Carol was only charged 2 NEAR (+ gas), because the third account was bogus
+		assert(
+			balances.delta.carol < n2y(-0.2) && balances.delta.carol > n2y(-0.3) 
+			, "carol overpaid");
+
+		// check that no money ended up in the distro contract
+		// (except for the "NEAR tip")
+		assert(balances.delta.distro < n2y(0.001), "contract was over-tipped");
+
+
   })
 })
 

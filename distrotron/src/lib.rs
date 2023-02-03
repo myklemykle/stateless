@@ -3,7 +3,7 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
-use near_sdk::{env, ext_contract, near_bindgen, AccountId, Balance, Promise, PromiseResult};
+use near_sdk::{env, ext_contract, near_bindgen, log, AccountId, Balance, Promise, PromiseOrValue, PromiseResult, PromiseResult::Failed};
 
 near_sdk::setup_alloc!();
 
@@ -21,22 +21,25 @@ const GGAS: u64 = 1_000_000_000;
 const TGAS: u64 = 1000 * GGAS;
 
 // Here are some generous gas estimates, for when you're working on modifications that might increase gas consumption:
-// const TXFEE_GAS: u64 = 2 * TGAS;
-// const LIST_MINTERS_GAS: u64 = 10 * TGAS;
-// const PAY_MINTERS_GAS: u64  = 50 * TGAS;
-// const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
+//const TXFEE_GAS: u64 = 2 * TGAS;
+//const LIST_MINTERS_GAS: u64 = 10 * TGAS;
+//const PAY_MINTERS_GAS: u64  = 50 * TGAS;
+//const REFUND_UNPAID_GAS: u64  = 10 * TGAS;
+//const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
 //
-// These are actual gas costs measured from real transactions,
+// These stingy-er measurements are actual gas costs measured from real transactions,
 // but specific to the version of this contract where I made the measurements.
 // (The NEAR Explorer shows the gas cost of each part of the transaction.)
-// If you modify the contract, please re-check the Explorer and update these if necessary..
+// If you modify the contract, please re-check the Explorer and update these if necessary.
+//
+// NOTE that LIST_MINTERS_GAS is dependent on Mintbase's contract &  could change at any time.
+// Also in our stub contract it seems to cost more as the number of minters goes up ....
+//
 const TXFEE_GAS: u64 = 2 * TGAS;
-// LIST_MINTERS_GAS is dependent on Mintbase's contract &  could change at any time.
-// Also in our stub contract it seems to cost more as the number of minters goes up.
-// But this seems a safe margin:
-const LIST_MINTERS_GAS: u64 = 10 * TGAS;
+const LIST_MINTERS_GAS: u64 = 10 * TGAS; // tested to be a safe margin
 const PAY_MINTERS_GAS: u64 = 8 * TGAS;
-const REPORT_PAYMENT_GAS: u64 = 3 * TGAS;
+const REFUND_UNPAID_GAS: u64 = 3 * TGAS;
+const REPORT_PAYMENT_GAS: u64  = 3 * TGAS; // EST
 
 /// The list_minters() API method on a Mintbase contract returns a list of NEAR accounts
 /// who are authorized to mint with that contract instance.
@@ -59,6 +62,7 @@ trait Payments {
     fn split_payment(&mut self, payees: Vec<AccountId>) -> Promise;
     fn pay_minters(&mut self, minter_contract: AccountId) -> Promise;
     fn list_minters_cb(&mut self) -> Promise;
+    fn refund_unpaid(&self, amount: JsonBalance) -> PromiseOrValue<bool>;
     fn report_payment(&self, amount: JsonBalance) -> JsonBalance;
 }
 
@@ -130,16 +134,47 @@ impl Payments for Distrotron {
     }
 
     #[doc(hidden)]
+    // If all our payments succeeded, there should be no more attached deposit.
+    // But if anything failed, we need to do a refund of all remaining funds.
+    // This func must be public so that it can be the target of a function_call()
+    fn refund_unpaid(&self, amount: JsonBalance) -> PromiseOrValue<bool> {
+
+        // i'm sure there's a Rust one-liner for this:
+        let i = env::promise_results_count();
+        let mut fails = 0;
+        for p in 1..i {
+            if env::promise_result(p) == Failed {
+                fails += 1;
+            }
+        }
+
+        // log!("RU: {} promise results", i);   // DEBUG
+        // log!("RU: {} failures", fails);      // DEBUG
+        //log!("RU: acct balance {}", env::account_balance());  // DEBUG
+
+        if fails > 0 {
+            let refund_promise = Promise::new( env::signer_account_id()).transfer(fails * amount.0);
+            // log!("payback time: {}!", fails*amount.0); //DEBUG
+            PromiseOrValue::Promise(refund_promise)
+        } else { 
+            PromiseOrValue::Value(true)
+        }
+    }
+
+    #[doc(hidden)]
     /// When all payments are complete, this function returns the number of YoctoNear paid to each payee.
     // Really it just echoes back the JsonBalance passed to it.
-    // It must be public so that it can be the target of a function_call(), but is not externally useful.
+    // This func must be public so that it can be the target of a function_call()
     fn report_payment(&self, amount: JsonBalance) -> JsonBalance {
         // Return the count of how much each payee received:
         amount
     }
+
+
 }
 
 impl Distrotron {
+
     /// abort if the payment or payee list are invalid
     fn test_payees(&mut self, payees: Vec<AccountId>) -> bool {
         // count the recipients.
@@ -195,17 +230,24 @@ impl Distrotron {
 
         // TODO: we could return it .... though i think that costs more in gas than you'd get back.
 
-        let slice = total_payment / count;
+        let slice: Balance = total_payment / count;
 
-        let finish = Promise::new(env::current_account_id()).function_call(
+        let refund_unpaid_promise = Promise::new(env::current_account_id()).function_call(
+            b"refund_unpaid".to_vec(),
+            json!({ "amount": U128(slice)}).to_string().into_bytes(),
+            0, // no payment
+            REFUND_UNPAID_GAS,
+        );
+
+        let report_payment_promise = Promise::new(env::current_account_id()).function_call(
             b"report_payment".to_vec(),
-            json!({ "amount": U128(slice) }).to_string().into_bytes(),
+            json!({ "amount": U128(slice)}).to_string().into_bytes(),
             0, // no payment
             REPORT_PAYMENT_GAS,
         );
 
         let payment_promise = self.pay_each(payees.clone(), slice); // all of it
-        payment_promise.then(finish)
+        payment_promise.then(refund_unpaid_promise).then(report_payment_promise)
     }
 
     /// Initiate transfers to the payees, and return a single Promise that
@@ -220,8 +262,8 @@ impl Distrotron {
         // boil all those promises down into a super-promise
         let mut big_p = promises[0].clone();
         for pi in 1..promises.len() {
-            //big_p = big_p.and(promises[pi].clone());   // execute in parallel
-            big_p = big_p.then(promises[pi].clone()); // execute one at a time
+            big_p = big_p.and(promises[pi].clone());   // execute in parallel
+            //big_p = big_p.then(promises[pi].clone()); // execute one at a time
         }
 
         big_p
