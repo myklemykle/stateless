@@ -97,6 +97,7 @@ ${NEARCORE}/target/quick-release/neard:
 	cd ${NEARCORE}; cargo build --profile quick-release -p neard 
 
 local_sandbox_init: local_sandbox
+	rm -r ${NEARD_HOME}; \
 	mkdir ${NEARD_HOME}; \
 	cd ${NEARCORE}; cargo run --profile quick-release -p neard -- --home ${NEARD_HOME} init
 
