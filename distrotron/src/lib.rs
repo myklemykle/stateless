@@ -3,7 +3,10 @@
 use near_sdk::borsh::{self, BorshDeserialize, BorshSerialize};
 use near_sdk::json_types::U128;
 use near_sdk::serde_json::json;
-use near_sdk::{env, ext_contract, near_bindgen, log, AccountId, Balance, Promise, PromiseOrValue, PromiseResult, PromiseResult::Failed};
+use near_sdk::{
+    env, ext_contract, log, near_bindgen, AccountId, Balance, Promise, PromiseOrValue,
+    PromiseResult, PromiseResult::Failed,
+};
 
 near_sdk::setup_alloc!();
 
@@ -39,7 +42,7 @@ const TXFEE_GAS: u64 = 2 * TGAS;
 const LIST_MINTERS_GAS: u64 = 10 * TGAS; // tested to be a safe margin
 const PAY_MINTERS_GAS: u64 = 8 * TGAS;
 const REFUND_UNPAID_GAS: u64 = 3 * TGAS;
-const REPORT_PAYMENT_GAS: u64  = 3 * TGAS; // EST
+const REPORT_PAYMENT_GAS: u64 = 3 * TGAS; // EST
 
 /// The list_minters() API method on a Mintbase contract returns a list of NEAR accounts
 /// who are authorized to mint with that contract instance.
@@ -138,7 +141,6 @@ impl Payments for Distrotron {
     // But if anything failed, we need to do a refund of all remaining funds.
     // This func must be public so that it can be the target of a function_call()
     fn refund_unpaid(&self, amount: JsonBalance) -> PromiseOrValue<JsonBalance> {
-
         // i'm sure there's a Rust one-liner for this:
         let i = env::promise_results_count();
         let mut fails: u64 = 0;
@@ -153,10 +155,9 @@ impl Payments for Distrotron {
             let refund = u128::from(fails) * amount.0;
             log!("{}/{} payments succeeded", (i - fails), i);
             log!("refunding {} yocto to caller", refund);
-            let refund_promise = Promise::new( env::signer_account_id()).transfer(refund);
+            let refund_promise = Promise::new(env::signer_account_id()).transfer(refund);
             PromiseOrValue::Promise(refund_promise)
-
-        } else { 
+        } else {
             // No failures, no refund needed.
             //
             log!("All {} payments succeeded", i);
@@ -172,12 +173,9 @@ impl Payments for Distrotron {
         // Return the count of how much each payee received:
         amount
     }
-
-
 }
 
 impl Distrotron {
-
     /// abort if the payment or payee list are invalid
     fn test_payees(&mut self, payees: Vec<AccountId>) -> bool {
         // count the recipients.
@@ -237,20 +235,22 @@ impl Distrotron {
 
         let refund_unpaid_promise = Promise::new(env::current_account_id()).function_call(
             b"refund_unpaid".to_vec(),
-            json!({ "amount": U128(slice)}).to_string().into_bytes(),
+            json!({ "amount": U128(slice) }).to_string().into_bytes(),
             0, // no payment
             REFUND_UNPAID_GAS,
         );
 
         let report_payment_promise = Promise::new(env::current_account_id()).function_call(
             b"report_payment".to_vec(),
-            json!({ "amount": U128(slice)}).to_string().into_bytes(),
+            json!({ "amount": U128(slice) }).to_string().into_bytes(),
             0, // no payment
             REPORT_PAYMENT_GAS,
         );
 
         let payment_promise = self.pay_each(payees.clone(), slice); // all of it
-        payment_promise.then(refund_unpaid_promise).then(report_payment_promise)
+        payment_promise
+            .then(refund_unpaid_promise)
+            .then(report_payment_promise)
     }
 
     /// Initiate transfers to the payees, and return a single Promise that
@@ -265,7 +265,7 @@ impl Distrotron {
         // boil all those promises down into a super-promise
         let mut big_p = promises[0].clone();
         for pi in 1..promises.len() {
-            big_p = big_p.and(promises[pi].clone());   // execute in parallel
+            big_p = big_p.and(promises[pi].clone()); // execute in parallel
         }
 
         big_p

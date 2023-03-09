@@ -41,7 +41,7 @@ let near
 const testUsers = {
   alice: '',
   bob: '',
-  carol: '',
+  carol: ''
   // doug: '',
   // emily: ''
 }
@@ -106,7 +106,7 @@ async function getConfig (env = process.env.NEAR_ENV || 'sandbox') {
         minterContract: 'stub',
         keyPath
       }
-			// console.log('keypath = ' + config.keyPath)
+      // console.log('keypath = ' + config.keyPath)
       break
 
     default:
@@ -114,7 +114,7 @@ async function getConfig (env = process.env.NEAR_ENV || 'sandbox') {
       process.exit(4)
   }
 
-	// console.debug(config)
+  // console.debug(config)
   return config
 }
 
@@ -131,7 +131,7 @@ function fullAccountName (prefix) {
 
 async function connectToNear () {
   config = await getConfig()
-	// console.log('connecting to ' + config.networkId)  //DEBUG
+  // console.log('connecting to ' + config.networkId)  //DEBUG
 
   const keyFile = require(config.keyPath)
   masterKey = nearAPI.KeyPair.fromString(
@@ -149,7 +149,7 @@ async function connectToNear () {
     nodeUrl: config.nearnodeUrl
   })
   masterAccount = new nearAPI.Account(near.connection, config.masterAccount)
-	// console.log('connected')  //DEBUG
+  // console.log('connected')  //DEBUG
 }
 
 async function createTestUser (
@@ -162,7 +162,7 @@ async function createTestUser (
   // delete it first,
   try {
     await account.deleteAccount(config.masterAccount)
-		// console.log('deleted ' + accountPrefix)  // DEBUG
+    // console.log('deleted ' + accountPrefix)  // DEBUG
   } catch {
     // fails if it didn't exist
   }
@@ -173,12 +173,12 @@ async function createTestUser (
     pubKey,
     n2y(initBalance)
   )
-	console.log('recreated ' + accountId)  // DEBUG
+  console.log('recreated ' + accountId) // DEBUG
   return account
 }
 
 async function makeTestUsers () {
-	// console.log(Object.keys(testUsers)) //DEBUG
+  // console.log(Object.keys(testUsers)) //DEBUG
   for (u of Object.keys(testUsers)) {
     testUsers[u] = await createTestUser(u, 10)
   };
@@ -355,7 +355,7 @@ describe('payment tests', () => {
         alice: await totalBalance(users.alice),
         bob: await totalBalance(users.bob),
         carol: await totalBalance(users.carol),
-				distro: await totalBalance(users.distro)
+        distro: await totalBalance(users.distro)
       }
     }
 
@@ -379,14 +379,14 @@ describe('payment tests', () => {
       carol: await totalBalance(users.carol)
     }
 
-		// console.log('Net payment: ' + net_payment + ' = ' + y2n(net_payment) + ' NEAR')
-		// console.log(balances)
+    // console.log('Net payment: ' + net_payment + ' = ' + y2n(net_payment) + ' NEAR')
+    // console.log(balances)
     assert(balances.before.alice + net_payment == balances.after.alice, 'alice bad balance')
     assert(balances.before.bob + net_payment == balances.after.bob, 'bob bad balance')
 
     // What did Carol pay for gas?
     const gascost = balances.before.carol - (balances.after.carol + (BigInt(2) * net_payment))
-		// console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR') 
+    // console.log('gas cost: ' + gascost + ' yocto = ' + y2n(gascost) + ' NEAR')
   })
 
   test('duplicates are removed from recipient list', async () => {
@@ -486,48 +486,46 @@ describe('payment tests', () => {
       before: {
         alice: await totalBalance(users.alice),
         bob: await totalBalance(users.bob),
-				carol: await totalBalance(users.carol), 
-				distro: await totalBalance(users.distro)
-			},
-			after: {},
-			delta: {}
+        carol: await totalBalance(users.carol),
+        distro: await totalBalance(users.distro)
+      },
+      after: {},
+      delta: {}
     }
 
     const distro = loadDistro(users.carol)
 
     // have carol send 3 NEAR to distrotron
 
-		net_payment = BigInt(await distro.split_payment({
-			args: {
-				// two valid accounts, one bogus one.
-				payees: [users.alice.accountId, 'your_mom', users.bob.accountId]
-			},
-			gas: LOTSAGAS, // attached GAS (optional)
-			amount: n2y(0.3)				// attached near
-		}))
+    net_payment = BigInt(await distro.split_payment({
+      args: {
+        // two valid accounts, one bogus one.
+        payees: [users.alice.accountId, 'your_mom', users.bob.accountId]
+      },
+      gas: LOTSAGAS, // attached GAS (optional)
+      amount: n2y(0.3)				// attached near
+    }))
 
-		// But the transactions are not atomic, so the payments will go through for all good users ...
+    // But the transactions are not atomic, so the payments will go through for all good users ...
 
-		for (u of Object.keys(balances.before)) {
-			balances.after[u] = await totalBalance(users[u])
-			balances.delta[u] = BigInt(balances.after[u]) - BigInt(balances.before[u])
-			console.log("user " + u + " balance delta:" + y2n( BigInt(balances.delta[u])))
-		};
+    for (u of Object.keys(balances.before)) {
+      balances.after[u] = await totalBalance(users[u])
+      balances.delta[u] = BigInt(balances.after[u]) - BigInt(balances.before[u])
+      console.log('user ' + u + ' balance delta:' + y2n(BigInt(balances.delta[u])))
+    };
 
-		// check that alice and bob got paid 1 NEAR each:
-		assert(balances.delta.alice == n2y(0.1), "alice was not paid");
-		assert(balances.delta.bob == n2y(0.1), "bob was not paid");
+    // check that alice and bob got paid 1 NEAR each:
+    assert(balances.delta.alice == n2y(0.1), 'alice was not paid')
+    assert(balances.delta.bob == n2y(0.1), 'bob was not paid')
 
-		// check that Carol was only charged 2 NEAR (+ gas), because the third account was bogus
-		assert(
-			balances.delta.carol < n2y(-0.2) && balances.delta.carol > n2y(-0.3) 
-			, "carol overpaid");
+    // check that Carol was only charged 2 NEAR (+ gas), because the third account was bogus
+    assert(
+      balances.delta.carol < n2y(-0.2) && balances.delta.carol > n2y(-0.3)
+      , 'carol overpaid')
 
-		// check that no money ended up in the distro contract
-		// (except for the "NEAR tip")
-		assert(balances.delta.distro < n2y(0.001), "contract was over-tipped");
-
-
+    // check that no money ended up in the distro contract
+    // (except for the "NEAR tip")
+    assert(balances.delta.distro < n2y(0.001), 'contract was over-tipped')
   })
 })
 
@@ -598,7 +596,7 @@ describe('stress tests', () => {
     jest.setTimeout(600000)
   })
 
-  test('can pay ' + ( process.env.STRESSTEST_COUNT || 87 ) + ' minters (stress test)', async () => {
+  test('can pay ' + (process.env.STRESSTEST_COUNT || 87) + ' minters (stress test)', async () => {
     // note: the real mintbase contracts don't support mock_minters() (obviously)
     // so this test will fail there.
 
