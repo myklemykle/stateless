@@ -1,3 +1,6 @@
 [submodule "web"]
 	path = web
 	url = https://github.com/myklemykle/stateless-web
+[submodule "demo"]
+	path = demo
+	url = https://github.com/STATELESSART/distrotron-demo
