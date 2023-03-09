@@ -17,6 +17,7 @@
  *
  * Optional:
  * 	* NEAR_SANDBOX_PORT -- TCP port of near API on sandbox, or leave blank for default of 3030
+ * 	* STRESSTEST_COUNT: number of payees to try in the large-number-of-payees stress test. (Default 87).
  *
  * Alternately, you can edit any of these values manually in the getConfig() method.
  *
@@ -258,7 +259,7 @@ function getNewMinterContract (acct) {
 }
 
 async function deployDistro () {
-  const contractwasm = await fs.readFile(path.resolve(__dirname, '../../target/wasm32-unknown-unknown/release/distrotron.wasm'))
+  const contractwasm = await fs.readFile(path.resolve(__dirname, '../../target/wasm32-unknown-unknown/release/distrotron-small.wasm'))
   const _contractAccount = await createTestUser(config.contractAccount, 100)
   await _contractAccount.deployContract(contractwasm)
 
@@ -597,11 +598,11 @@ describe('stress tests', () => {
     jest.setTimeout(600000)
   })
 
-  test('can pay 87 minters', async () => {
-    // the real mintbase contracts don't support mock_minters() (obviously)
+  test('can pay ' + ( process.env.STRESSTEST_COUNT || 87 ) + ' minters (stress test)', async () => {
+    // note: the real mintbase contracts don't support mock_minters() (obviously)
     // so this test will fail there.
 
-    const n = 87
+    const n = process.env.STRESSTEST_COUNT || 87
     const users = await makeNUsers(n)
     const balances = { before: {}, after: {} }
 

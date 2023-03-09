@@ -22,7 +22,7 @@ NEARCORE := ./nearcore
 ## 
 #
 # It's considered bad form to use environment vars in Makefiles,
-# but this one is required if we want to test in the NEAR testnet
+# but this one already controls the near-sdk-js (node) environment, which we want to stay in sync with.
 NEAR_ENV ?= localnet
 ## -----------------------------
 ## 
@@ -32,31 +32,35 @@ help:                    ## Show this help.
 	@sed -ne '/@sed/!s/## //p' $(MAKEFILE_LIST)
 ## 
 #################
+TARGET_RELEASE := $(BUILD_DIR)/release/distrotron.wasm
+BUILD_DIR := target/wasm32-unknown-unknown
 # 
 # Build targets:
 #
-target/wasm32-unknown-unknown/release/distrotron.wasm: $(wildcard distrotron/src/*.rs) Cargo.toml distrotron/Cargo.toml
+$(BUILD_DIR)/release/distrotron.wasm: $(wildcard distrotron/src/*.rs) Cargo.toml distrotron/Cargo.toml
 	cargo build --target wasm32-unknown-unknown --release -p distrotron
 
-target/wasm32-unknown-unknown/debug/distrotron.wasm: $(wildcard distrotron/src/*.rs) Cargo.toml distrotron/Cargo.toml
+$(BUILD_DIR)/debug/distrotron.wasm: $(wildcard distrotron/src/*.rs) Cargo.toml distrotron/Cargo.toml
 	cargo build --target wasm32-unknown-unknown -p distrotron
 
-target/wasm32-unknown-unknown/debug/stub.wasm: $(wildcard stub/src/*.rs) Cargo.toml stub/Cargo.toml
+$(BUILD_DIR)/debug/stub.wasm: $(wildcard stub/src/*.rs) Cargo.toml stub/Cargo.toml
 	cargo build --target wasm32-unknown-unknown -p stub
 
-target/wasm32-unknown-unknown/release/stub.wasm: $(wildcard stub/src/*.rs) Cargo.toml stub/Cargo.toml
+$(BUILD_DIR)/release/stub.wasm: $(wildcard stub/src/*.rs) Cargo.toml stub/Cargo.toml
 	cargo build --target wasm32-unknown-unknown --release -p stub
 
 ## release:                 build distrotron 
-release: target/wasm32-unknown-unknown/release/distrotron.wasm  
+release: $(BUILD_DIR)/release/distrotron.wasm  
+	# reduce contract size before deploying:
+	npx wasm-opt -Oz --strip-debug -o $(BUILD_DIR)/release/distrotron-small.wasm $(BUILD_DIR)/release/distrotron.wasm
 
 ## debug:                   build distrotron (debug version)
-debug: target/wasm32-unknown-unknown/debug/distrotron.wasm      
+debug: $(BUILD_DIR)/debug/distrotron.wasm      
 
 ## stub_release:            build stub contract 
-stub_release: target/wasm32-unknown-unknown/release/stub.wasm   
+stub_release: $(BUILD_DIR)/release/stub.wasm   
 
-stub_debug: target/wasm32-unknown-unknown/debug/stub.wasm   
+stub_debug: $(BUILD_DIR)/debug/stub.wasm   
 
 
 ############
@@ -81,7 +85,7 @@ unittest_stub: stub_release stub_debug
 # for sandbox tests.
 #
 ## 
-## local_sandbox_start:     (Slowly) download & build neard, then run it in the local terminal: 
+## local_sandbox_start:     (Slowly) download & build neard, then run it in the local terminal
 local_sandbox_start: local_sandbox local_sandbox_init 
 	cd ${NEARCORE}; cargo run --profile quick-release -p neard -- --home ${NEARD_HOME} run
 
@@ -109,7 +113,7 @@ local_sandbox_init: local_sandbox
 #
 ## 
 ## docker_sandbox_start:    Fetch and run a Docker neard image in the foreground.
-##     (neard will block all quit/stop/kill signals! To stop it, make the "docker_sandbox_stop" target in a different window.)
+#  (neard will block all quit/stop/kill signals! To stop it, make the "docker_sandbox_stop" target in a different window.)
 docker_sandbox_start: 
 	docker start distrotron_docker_sandbox || \
 		mkdir ${NEARD_HOME}; \
@@ -131,11 +135,13 @@ docker_sandbox_stop:
 
 #############
 #
-## These targets perform sandbox tests.
-## They can be run in a localnet (on the local host, a remote host or in a Docker container)
-## or in the NEAR public testnet if NEAR_ENV='testnet'.
+# These targets perform sandbox tests.
+# They can be run in a localnet (on the local host, a remote host or in a Docker container)
+# or in the NEAR public testnet if NEAR_ENV='testnet'.
 #
 ## 
+test: sandboxtest
+
 sandboxtest:             ## Default test target: reset test state and run all payment tests.
 	cd tests/sandbox; \
 		export NEARD_HOME=${NEARD_HOME}; \
@@ -212,6 +218,13 @@ sandbox_payment:
 		export NEARD_KEY=${NEARD_KEY}; \
 		export NEAR_ENV=localnet; \
 		npx jest -t "payment"
+
+sandbox_stress:
+	cd tests/sandbox; \
+		export NEARD_HOME=${NEARD_HOME}; \
+		export NEARD_KEY=${NEARD_KEY}; \
+		export NEAR_ENV=localnet; \
+		npx jest -t "stress"
 
 # Build and launch the web demo
 
