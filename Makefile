@@ -157,6 +157,8 @@ sandboxtest_all:         ## Reset state and run all tests, including a stress te
 		export NEAR_ENV=localnet; \
 		npx jest 
 #
+## sandboxtest_stress:      Run just the stress test.  You can set the environment variable STRESSTEST_COUNT, or use the default.
+sandboxtest_stress: sandbox_stress   # same thing
 ##
 sandboxtest_setup:       ## Reset test state
 	cd tests/sandbox; \
