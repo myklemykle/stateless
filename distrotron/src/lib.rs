@@ -24,23 +24,26 @@ const GGAS: u64 = 1_000_000_000;
 const TGAS: u64 = 1000 * GGAS;
 
 // Here are some generous gas estimates, for when you're working on modifications that might increase gas consumption:
-// const TXFEE_GAS: u64 = 2 * TGAS;
-// const LIST_MINTERS_GAS: u64 = 10 * TGAS;
-// const PAY_MINTERS_GAS: u64  = 50 * TGAS;
-// const REFUND_UNPAID_GAS: u64  = 10 * TGAS;
-// const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
+//const TXFEE_GAS: u64 = 2 * TGAS;
+//const LIST_MINTERS_GAS: u64 = 10 * TGAS; // should cost nothing, it's a read method!
+//const PAY_MINTERS_GAS: u64  = 50 * TGAS;
+//const REFUND_UNPAID_GAS: u64  = 10 * TGAS;
+//const REPORT_PAYMENT_GAS: u64  = 10 * TGAS;
 //
-// These stingy-er measurements are actual gas costs measured from real transactions,
-// but specific to the version of this contract where I made the measurements.
+// These more tightwad measurements are actual gas costs measured from real transactions,
+// specific to the date & version of this contract where I made the measurements.
 // (The NEAR Explorer shows the gas cost of each part of the transaction.)
 // If you modify the contract, please re-check the Explorer and update these if necessary.
 //
-// NOTE that LIST_MINTERS_GAS is dependent on Mintbase's contract &  could change at any time.
+// Also, if you are seeing the contract fail with "exceeded the prepaid gas" it may be that
+// the built-in costs of the network have changed.
+//
 // Also in our stub contract it seems to cost more as the number of minters goes up ....
 //
 const TXFEE_GAS: u64 = 2 * TGAS;
-const LIST_MINTERS_GAS: u64 = 10 * TGAS; // tested to be a safe margin
-const PAY_MINTERS_GAS: u64 = 8 * TGAS;
+const LIST_MINTERS_GAS: u64 = 10 * TGAS; // actually should not cost any gas at all for a read-only method
+                                        // ... am i calling it wrong?
+const PAY_MINTERS_GAS: u64 = 9 * TGAS;  // was 8 TGAS; prices went up circa June 2023.
 const REFUND_UNPAID_GAS: u64 = 3 * TGAS;
 const REPORT_PAYMENT_GAS: u64 = 3 * TGAS; // EST
 
